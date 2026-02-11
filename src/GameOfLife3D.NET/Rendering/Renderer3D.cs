@@ -15,7 +15,6 @@ public sealed class Renderer3D : IDisposable
 
     private readonly RenderSettings _settings = new();
     private int _gridSize = 50;
-    private float _animationStartTime;
 
     // Dirty tracking
     private int _lastDisplayStart = -1;
@@ -23,9 +22,6 @@ public sealed class Renderer3D : IDisposable
     private int _lastGenerationCount = -1;
     private float _lastMinY;
     private float _lastMaxY;
-
-    // Shared instance data buffer
-    private InstanceData[] _instanceBuffer = new InstanceData[4_000_000];
     private int _currentInstanceCount;
 
     public RenderSettings Settings => _settings;
@@ -46,8 +42,6 @@ public sealed class Renderer3D : IDisposable
 
         _gridRenderer = new GridRenderer(_gl);
         _gridRenderer.UpdateGrid(_gridSize);
-
-        _animationStartTime = (float)DateTime.UtcNow.Subtract(DateTime.UnixEpoch).TotalSeconds;
     }
 
     public void SetGridSize(int size)
@@ -74,6 +68,8 @@ public sealed class Renderer3D : IDisposable
 
         if (!stateChanged) return;
 
+        var buffer = _instancedRenderer.GetInstanceBuffer();
+        int maxInstances = _instancedRenderer.MaxInstances;
         int instanceIndex = 0;
         float halfSize = _gridSize / 2f;
 
@@ -82,9 +78,9 @@ public sealed class Renderer3D : IDisposable
             var generation = generations[genIndex];
             foreach (var cell in generation.LiveCells)
             {
-                if (instanceIndex >= _instanceBuffer.Length) break;
+                if (instanceIndex >= maxInstances) break;
 
-                _instanceBuffer[instanceIndex++] = new InstanceData
+                buffer[instanceIndex++] = new InstanceData
                 {
                     Position = new Vector3(cell.X - halfSize, genIndex, cell.Y - halfSize),
                     GenerationT = genIndex,
@@ -93,7 +89,7 @@ public sealed class Renderer3D : IDisposable
         }
 
         _currentInstanceCount = instanceIndex;
-        _instancedRenderer.UpdateInstancesDirect(_instanceBuffer, instanceIndex);
+        _instancedRenderer.SetInstanceCount(instanceIndex);
 
         _lastMinY = displayStart;
         _lastMaxY = Math.Max(displayEnd, displayStart + 1);
@@ -102,15 +98,13 @@ public sealed class Renderer3D : IDisposable
         _lastGenerationCount = generations.Count;
     }
 
-    public void Render(Matrix4x4 view, Matrix4x4 proj, int screenWidth, int screenHeight, int logicalWidth = 0, int logicalHeight = 0)
+    public void Render(Matrix4x4 view, Matrix4x4 proj, int screenWidth, int screenHeight, double currentTime, int logicalWidth = 0, int logicalHeight = 0)
     {
         if (_instancedRenderer == null || _cubeShader == null || _wireframeShader == null || _gridShader == null)
             return;
 
-        float now = (float)DateTime.UtcNow.Subtract(DateTime.UnixEpoch).TotalSeconds;
-        float elapsed = now - _animationStartTime;
         float cycleTime = 5.0f;
-        float normalizedTime = (elapsed % cycleTime) / cycleTime;
+        float normalizedTime = (float)(currentTime % cycleTime) / cycleTime;
         float range = _lastMaxY - _lastMinY;
         float time = normalizedTime * range;
 

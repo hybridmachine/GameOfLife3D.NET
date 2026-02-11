@@ -5,6 +5,9 @@ namespace GameOfLife3D.NET.UI;
 
 public sealed class TimelineBar
 {
+    private static readonly string[] Speeds = ["0.25x", "0.5x", "1x", "2x", "4x", "8x"];
+    private static readonly float[] SpeedValues = [0.25f, 0.5f, 1f, 2f, 4f, 8f];
+
     private readonly float _dpiScale;
     private int _startGeneration;
     private int _endGeneration;
@@ -87,13 +90,11 @@ public sealed class TimelineBar
 
             // Speed selector
             ImGui.SetNextItemWidth(60 * s);
-            string[] speeds = ["0.25x", "0.5x", "1x", "2x", "4x", "8x"];
-            float[] speedValues = [0.25f, 0.5f, 1f, 2f, 4f, 8f];
-            int currentIdx = Array.IndexOf(speedValues, _speedMultiplier);
+            int currentIdx = Array.IndexOf(SpeedValues, _speedMultiplier);
             if (currentIdx < 0) currentIdx = 2; // default 1x
-            if (ImGui.Combo("##speed", ref currentIdx, speeds, speeds.Length))
+            if (ImGui.Combo("##speed", ref currentIdx, Speeds, Speeds.Length))
             {
-                _speedMultiplier = speedValues[currentIdx];
+                _speedMultiplier = SpeedValues[currentIdx];
             }
             ImGui.SameLine();
 

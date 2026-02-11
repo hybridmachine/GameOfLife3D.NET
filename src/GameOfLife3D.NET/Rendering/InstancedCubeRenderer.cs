@@ -64,17 +64,13 @@ public sealed class InstancedCubeRenderer : IDisposable
         _gl.BindVertexArray(0);
     }
 
-    public void UpdateInstances(ReadOnlySpan<InstanceData> data, int count)
-    {
-        _instanceCount = Math.Min(count, _maxInstances);
-        data[.._instanceCount].CopyTo(_instanceBuffer);
-        _dirty = true;
-    }
+    public InstanceData[] GetInstanceBuffer() => _instanceBuffer;
 
-    public void UpdateInstancesDirect(InstanceData[] data, int count)
+    public int MaxInstances => _maxInstances;
+
+    public void SetInstanceCount(int count)
     {
         _instanceCount = Math.Min(count, _maxInstances);
-        Array.Copy(data, _instanceBuffer, _instanceCount);
         _dirty = true;
     }
 

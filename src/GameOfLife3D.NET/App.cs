@@ -168,7 +168,7 @@ public sealed class App : IDisposable
         var proj = _camera.ProjectionMatrix;
         var fbSize = _window.FramebufferSize;
         var logicalSize = _window.Size;
-        _renderer.Render(view, proj, fbSize.X, fbSize.Y, logicalSize.X, logicalSize.Y);
+        _renderer.Render(view, proj, fbSize.X, fbSize.Y, currentTime, logicalSize.X, logicalSize.Y);
 
         // Render ImGui UI (uses logical pixel coordinates)
         _ui.Render(logicalSize.X, logicalSize.Y);

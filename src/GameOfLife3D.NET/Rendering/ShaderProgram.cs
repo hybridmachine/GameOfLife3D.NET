@@ -78,7 +78,26 @@ public sealed class ShaderProgram : IDisposable
         using var stream = assembly.GetManifestResourceStream(fullName)
             ?? throw new FileNotFoundException($"Embedded resource not found: {fullName}");
         using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
+        string source = reader.ReadToEnd();
+
+        // Resolve #include "filename" directives
+        return ResolveIncludes(source, assembly);
+    }
+
+    private static string ResolveIncludes(string source, Assembly assembly)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            source,
+            @"#include\s+""([^""]+)""",
+            match =>
+            {
+                string includeName = match.Groups[1].Value;
+                string fullName = $"GameOfLife3D.NET.Shaders.{includeName}";
+                using var stream = assembly.GetManifestResourceStream(fullName)
+                    ?? throw new FileNotFoundException($"Shader include not found: {fullName}");
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            });
     }
 
     public void Use() => _gl.UseProgram(_handle);

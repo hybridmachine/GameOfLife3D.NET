@@ -17,6 +17,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Shaders\*.vert" />
     <EmbeddedResource Include="Shaders\*.frag" />
+    <EmbeddedResource Include="Shaders\*.glsl" />
   </ItemGroup>
 
 </Project>

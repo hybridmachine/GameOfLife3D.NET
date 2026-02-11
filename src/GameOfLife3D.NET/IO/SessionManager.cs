@@ -35,6 +35,12 @@ public sealed class RenderSessionData
     public bool ShowGridLines { get; set; }
     public bool ShowGenerationLabels { get; set; }
     public bool ShowWireframe { get; set; }
+    public float CellColorR { get; set; }
+    public float CellColorG { get; set; } = 1f;
+    public float CellColorB { get; set; } = 0.533f;
+    public float EdgeColorR { get; set; } = 1f;
+    public float EdgeColorG { get; set; } = 1f;
+    public float EdgeColorB { get; set; } = 1f;
 }
 
 public static class SessionManager
@@ -94,6 +100,12 @@ public static class SessionManager
         ShowGridLines = s.ShowGridLines,
         ShowGenerationLabels = s.ShowGenerationLabels,
         ShowWireframe = s.ShowWireframe,
+        CellColorR = s.CellColor.X,
+        CellColorG = s.CellColor.Y,
+        CellColorB = s.CellColor.Z,
+        EdgeColorR = s.EdgeColor.X,
+        EdgeColorG = s.EdgeColor.Y,
+        EdgeColorB = s.EdgeColor.Z,
     };
 
     public static void ApplyRenderSettings(RenderSessionData data, RenderSettings target)
@@ -105,5 +117,7 @@ public static class SessionManager
         target.ShowGridLines = data.ShowGridLines;
         target.ShowGenerationLabels = data.ShowGenerationLabels;
         target.ShowWireframe = data.ShowWireframe;
+        target.CellColor = new Vector3(data.CellColorR, data.CellColorG, data.CellColorB);
+        target.EdgeColor = new Vector3(data.EdgeColorR, data.EdgeColorG, data.EdgeColorB);
     }
 }
