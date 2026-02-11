@@ -102,7 +102,7 @@ public sealed class Renderer3D : IDisposable
         _lastGenerationCount = generations.Count;
     }
 
-    public void Render(Matrix4x4 view, Matrix4x4 proj, int screenWidth, int screenHeight)
+    public void Render(Matrix4x4 view, Matrix4x4 proj, int screenWidth, int screenHeight, int logicalWidth = 0, int logicalHeight = 0)
     {
         if (_instancedRenderer == null || _cubeShader == null || _wireframeShader == null || _gridShader == null)
             return;
@@ -145,12 +145,14 @@ public sealed class Renderer3D : IDisposable
             _gl.Disable(EnableCap.Blend);
         }
 
-        // Render generation labels via ImGui overlay
+        // Render generation labels via ImGui overlay (uses logical pixel coordinates)
         if (_settings.ShowGenerationLabels && _lastDisplayStart >= 0)
         {
+            int labelW = logicalWidth > 0 ? logicalWidth : screenWidth;
+            int labelH = logicalHeight > 0 ? logicalHeight : screenHeight;
             TextRenderer.RenderGenerationLabels(
                 _lastDisplayStart, _lastDisplayEnd, _gridSize,
-                view, proj, screenWidth, screenHeight);
+                view, proj, labelW, labelH);
         }
     }
 

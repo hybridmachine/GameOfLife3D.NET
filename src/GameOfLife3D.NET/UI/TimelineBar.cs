@@ -5,6 +5,7 @@ namespace GameOfLife3D.NET.UI;
 
 public sealed class TimelineBar
 {
+    private readonly float _dpiScale;
     private int _startGeneration;
     private int _endGeneration;
     private int _totalGenerations;
@@ -19,6 +20,11 @@ public sealed class TimelineBar
     public event Action<int, int>? RangeChanged;
     public event Action<bool>? PlayToggled;
     public event Action? ResetRequested;
+
+    public TimelineBar(float dpiScale = 1.0f)
+    {
+        _dpiScale = dpiScale;
+    }
 
     public void SetTotalGenerations(int total)
     {
@@ -47,12 +53,13 @@ public sealed class TimelineBar
 
     public void Render(int windowWidth, int windowHeight)
     {
-        float barHeight = 60f;
-        float barY = windowHeight - barHeight - 30f; // Above status bar
+        float s = _dpiScale;
+        float barHeight = 60f * s;
+        float barY = windowHeight - barHeight - 30f * s; // Above status bar
 
         ImGui.SetNextWindowPos(new Vector2(0, barY));
         ImGui.SetNextWindowSize(new Vector2(windowWidth, barHeight));
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10, 5));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10 * s, 5 * s));
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.1f, 0.1f, 0.1f, 0.9f));
 
         if (ImGui.Begin("Timeline", ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize |
@@ -79,7 +86,7 @@ public sealed class TimelineBar
             ImGui.SameLine();
 
             // Speed selector
-            ImGui.SetNextItemWidth(60);
+            ImGui.SetNextItemWidth(60 * s);
             string[] speeds = ["0.25x", "0.5x", "1x", "2x", "4x", "8x"];
             float[] speedValues = [0.25f, 0.5f, 1f, 2f, 4f, 8f];
             int currentIdx = Array.IndexOf(speedValues, _speedMultiplier);
@@ -92,7 +99,7 @@ public sealed class TimelineBar
 
             // Range slider
             int maxGen = Math.Max(0, _totalGenerations - 1);
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - 120);
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - 120 * s);
 
             int start = _startGeneration;
             int end = _endGeneration;

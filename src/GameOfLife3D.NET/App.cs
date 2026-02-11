@@ -24,6 +24,7 @@ public sealed class App : IDisposable
     private CameraController? _camera;
     private ImGuiUI? _ui;
 
+    private float _dpiScale = 1.0f;
     private double _startTime;
     private bool _spaceWasDown;
 
@@ -49,10 +50,30 @@ public sealed class App : IDisposable
         _gl = GL.GetApi(_window!);
         _input = _window!.CreateInput();
 
-        _imGuiController = new ImGuiController(_gl, _window, _input);
+        // Detect DPI scale from framebuffer vs logical window size
+        _dpiScale = (float)_window!.FramebufferSize.X / _window.Size.X;
+        if (_dpiScale <= 1.0f)
+            _dpiScale = DpiHelper.GetSystemDpiScale();
+        _dpiScale = Math.Max(1.0f, _dpiScale);
 
-        // Configure ImGui style
+        _imGuiController = new ImGuiController(_gl, _window, _input, onConfigureIO: () =>
+        {
+            var io = ImGui.GetIO();
+            io.Fonts.Clear();
+            unsafe
+            {
+                var config = ImGuiNative.ImFontConfig_ImFontConfig();
+                config->SizePixels = 13.0f * _dpiScale;
+                config->OversampleH = 2;
+                config->OversampleV = 2;
+                io.Fonts.AddFontDefault(config);
+                ImGuiNative.ImFontConfig_destroy(config);
+            }
+        });
+
+        // Configure ImGui style — scale all sizes for DPI, then apply color overrides
         var style = ImGui.GetStyle();
+        style.ScaleAllSizes(_dpiScale);
         style.WindowRounding = 6f;
         style.FrameRounding = 4f;
         style.GrabRounding = 3f;
@@ -81,7 +102,7 @@ public sealed class App : IDisposable
         _camera.AspectRatio = (float)_window!.Size.X / _window.Size.Y;
 
         // Initialize UI
-        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader);
+        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _dpiScale);
         _ui.SyncDisplayRange();
 
         // OpenGL setup
@@ -145,11 +166,12 @@ public sealed class App : IDisposable
 
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix;
-        var size = _window.FramebufferSize;
-        _renderer.Render(view, proj, size.X, size.Y);
+        var fbSize = _window.FramebufferSize;
+        var logicalSize = _window.Size;
+        _renderer.Render(view, proj, fbSize.X, fbSize.Y, logicalSize.X, logicalSize.Y);
 
-        // Render ImGui UI
-        _ui.Render(size.X, size.Y);
+        // Render ImGui UI (uses logical pixel coordinates)
+        _ui.Render(logicalSize.X, logicalSize.Y);
         _imGuiController.Render();
     }
 

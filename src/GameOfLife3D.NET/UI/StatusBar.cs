@@ -5,11 +5,17 @@ namespace GameOfLife3D.NET.UI;
 
 public sealed class StatusBar
 {
+    private readonly float _dpiScale;
     private int _fps;
     private int _frameCount;
     private double _lastFpsTime;
 
     public int Fps => _fps;
+
+    public StatusBar(float dpiScale = 1.0f)
+    {
+        _dpiScale = dpiScale;
+    }
 
     public void UpdateFPS(double currentTime)
     {
@@ -29,7 +35,7 @@ public sealed class StatusBar
         string statusText = $"Gen: {displayStart}-{displayEnd} | Rule: {ruleString} | Cells: {cellCount} | FPS: {_fps}";
 
         var textSize = ImGui.CalcTextSize(statusText);
-        float padding = 8f;
+        float padding = 8f * _dpiScale;
         float barHeight = textSize.Y + padding * 2;
 
         // Background bar at bottom

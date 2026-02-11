@@ -15,6 +15,7 @@ public sealed class ImGuiUI
     private readonly PatternLoader _patternLoader;
     private readonly TimelineBar _timeline;
     private readonly StatusBar _statusBar;
+    private readonly float _dpiScale;
 
     // UI state
     private int _selectedGridSizeIdx = 2; // 50
@@ -70,14 +71,15 @@ public sealed class ImGuiUI
     public int DisplayEnd => _displayEnd;
     public bool IsPlaying => _isPlaying;
 
-    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader)
+    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, float dpiScale = 1.0f)
     {
         _engine = engine;
         _renderer = renderer;
         _camera = camera;
         _patternLoader = patternLoader;
-        _timeline = new TimelineBar();
-        _statusBar = new StatusBar();
+        _dpiScale = dpiScale;
+        _timeline = new TimelineBar(dpiScale);
+        _statusBar = new StatusBar(dpiScale);
 
         // Sync initial state from render settings
         var settings = renderer.Settings;
@@ -169,8 +171,9 @@ public sealed class ImGuiUI
 
     private void RenderControlPanel()
     {
-        ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(300, 600), ImGuiCond.FirstUseEver);
+        float s = _dpiScale;
+        ImGui.SetNextWindowPos(new Vector2(10 * s, 10 * s), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(300 * s, 600 * s), ImGuiCond.FirstUseEver);
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.08f, 0.08f, 0.12f, 0.95f));
 
         if (ImGui.Begin("Controls"))
@@ -194,7 +197,8 @@ public sealed class ImGuiUI
         if (ImGui.CollapsingHeader("Simulation", ImGuiTreeNodeFlags.DefaultOpen))
         {
             // Grid size
-            ImGui.SetNextItemWidth(120);
+            float s = _dpiScale;
+            ImGui.SetNextItemWidth(120 * s);
             if (ImGui.Combo("Grid Size", ref _selectedGridSizeIdx, GridSizes, GridSizes.Length))
             {
                 int newSize = GridSizeValues[_selectedGridSizeIdx];
@@ -204,7 +208,7 @@ public sealed class ImGuiUI
             }
 
             // Rule preset
-            ImGui.SetNextItemWidth(180);
+            ImGui.SetNextItemWidth(180 * s);
             if (ImGui.Combo("Rule", ref _selectedRuleIdx, RuleNames, RuleNames.Length))
             {
                 string key = RuleKeys[_selectedRuleIdx];
@@ -219,9 +223,9 @@ public sealed class ImGuiUI
             // Custom rule
             if (_showCustomRule)
             {
-                ImGui.SetNextItemWidth(80);
+                ImGui.SetNextItemWidth(80 * s);
                 ImGui.InputText("Birth", ref _customBirth, 9);
-                ImGui.SetNextItemWidth(80);
+                ImGui.SetNextItemWidth(80 * s);
                 ImGui.InputText("Survival", ref _customSurvival, 9);
                 if (ImGui.Button("Apply Custom Rule"))
                 {
@@ -264,7 +268,7 @@ public sealed class ImGuiUI
             }
 
             // Random init
-            ImGui.SetNextItemWidth(120);
+            ImGui.SetNextItemWidth(120 * s);
             ImGui.SliderFloat("Density", ref _randomDensity, 0.05f, 0.8f, "%.2f");
             ImGui.SameLine();
             if (ImGui.Button("Random"))
