@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GameOfLife3D.NET/GameOfLife3D.NET.csproj" />
+  </Folder>
+</Solution>
