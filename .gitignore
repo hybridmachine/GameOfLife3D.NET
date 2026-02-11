@@ -40,6 +40,9 @@ bld/
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
 
+## Signing config (contains account details)
+signing/signing-config.json
+
 ## OS files
 Thumbs.db
 ehthumbs.db
