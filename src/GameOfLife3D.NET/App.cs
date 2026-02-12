@@ -71,13 +71,8 @@ public sealed class App : IDisposable
             }
         });
 
-        // Configure ImGui style — scale all sizes for DPI, then apply color overrides
-        var style = ImGui.GetStyle();
-        style.ScaleAllSizes(_dpiScale);
-        style.WindowRounding = 6f;
-        style.FrameRounding = 4f;
-        style.GrabRounding = 3f;
-        style.Colors[(int)ImGuiCol.WindowBg] = new System.Numerics.Vector4(0.08f, 0.08f, 0.12f, 0.95f);
+        // Apply the centralized UI theme (handles both sizing and colors)
+        Theme.Apply(_dpiScale);
 
         // Initialize engine
         _engine = new GameEngine(50);

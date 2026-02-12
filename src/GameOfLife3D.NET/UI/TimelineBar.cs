@@ -57,70 +57,181 @@ public sealed class TimelineBar
     public void Render(int windowWidth, int windowHeight)
     {
         float s = _dpiScale;
-        float barHeight = 60f * s;
-        float barY = windowHeight - barHeight - 30f * s; // Above status bar
+        float barHeight = 64f * s;
+        float statusBarHeight = 30f * s;
+        float barY = windowHeight - barHeight - statusBarHeight;
 
         ImGui.SetNextWindowPos(new Vector2(0, barY));
         ImGui.SetNextWindowSize(new Vector2(windowWidth, barHeight));
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10 * s, 5 * s));
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.1f, 0.1f, 0.1f, 0.9f));
 
-        if (ImGui.Begin("Timeline", ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize |
-            ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings))
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(14 * s, 8 * s));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6 * s, 6 * s));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.07f, 0.07f, 0.10f, 0.95f));
+        ImGui.PushStyleColor(ImGuiCol.Border, Theme.Border);
+
+        var flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize |
+            ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings;
+
+        if (ImGui.Begin("Timeline", flags))
         {
-            // Transport controls
-            if (ImGui.Button("|<")) SeekEnd(0);
-            ImGui.SameLine();
-            if (ImGui.Button("<")) SeekEnd(_endGeneration - 1);
-            ImGui.SameLine();
+            // Draw top accent line
+            var drawList = ImGui.GetWindowDrawList();
+            var winPos = ImGui.GetWindowPos();
+            drawList.AddLine(
+                winPos,
+                new Vector2(winPos.X + windowWidth, winPos.Y),
+                Theme.AccentDimU32, 2f * s);
 
-            string playLabel = _isPlaying ? "Pause" : "Play";
-            if (ImGui.Button(playLabel))
-            {
-                _isPlaying = !_isPlaying;
-                PlayToggled?.Invoke(_isPlaying);
-            }
-            ImGui.SameLine();
-            if (ImGui.Button(">")) SeekEnd(_endGeneration + 1);
-            ImGui.SameLine();
-            if (ImGui.Button(">|")) SeekEnd(Math.Max(0, _totalGenerations - 1));
-            ImGui.SameLine();
-            if (ImGui.Button("Reset")) ResetRequested?.Invoke();
-            ImGui.SameLine();
-
-            // Speed selector
-            ImGui.SetNextItemWidth(60 * s);
-            int currentIdx = Array.IndexOf(SpeedValues, _speedMultiplier);
-            if (currentIdx < 0) currentIdx = 2; // default 1x
-            if (ImGui.Combo("##speed", ref currentIdx, Speeds, Speeds.Length))
-            {
-                _speedMultiplier = SpeedValues[currentIdx];
-            }
-            ImGui.SameLine();
-
-            // Range slider
-            int maxGen = Math.Max(0, _totalGenerations - 1);
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - 120 * s);
-
-            int start = _startGeneration;
-            int end = _endGeneration;
-            // Use two separate sliders for start and end
-            ImGui.Text($"Gen {_startGeneration}-{_endGeneration} / {maxGen}");
-
-            // End generation slider (main scrubber)
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
-            if (ImGui.SliderInt("##end", ref end, 0, maxGen, ""))
-            {
-                _endGeneration = end;
-                if (_startGeneration > _endGeneration)
-                    _startGeneration = _endGeneration;
-                RangeChanged?.Invoke(_startGeneration, _endGeneration);
-            }
+            RenderTransportRow(s);
+            RenderScrubberRow(s);
         }
         ImGui.End();
 
+        ImGui.PopStyleColor(2);
+        ImGui.PopStyleVar(2);
+    }
+
+    private void RenderTransportRow(float s)
+    {
+        float btnSize = 28 * s;
+        var btnSizeVec = new Vector2(btnSize, btnSize);
+
+        // Transport: Skip to start
+        if (TransportButton("\u23EE", btnSizeVec, "First generation"))
+            SeekEnd(0);
+        ImGui.SameLine();
+
+        // Step back
+        if (TransportButton("\u23F4", btnSizeVec, "Previous generation"))
+            SeekEnd(_endGeneration - 1);
+        ImGui.SameLine();
+
+        // Play / Pause — accent colored when playing
+        if (_isPlaying)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Button, Theme.AccentMuted);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Theme.AccentDim);
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, Theme.Accent);
+        }
+        string playIcon = _isPlaying ? "\u23F8" : "\u25B6";
+        string playTip = _isPlaying ? "Pause" : "Play";
+        if (TransportButton(playIcon, btnSizeVec, playTip))
+        {
+            _isPlaying = !_isPlaying;
+            PlayToggled?.Invoke(_isPlaying);
+        }
+        if (_isPlaying)
+            ImGui.PopStyleColor(3);
+        ImGui.SameLine();
+
+        // Step forward
+        if (TransportButton("\u23F5", btnSizeVec, "Next generation"))
+            SeekEnd(_endGeneration + 1);
+        ImGui.SameLine();
+
+        // Skip to end
+        if (TransportButton("\u23ED", btnSizeVec, "Last generation"))
+            SeekEnd(Math.Max(0, _totalGenerations - 1));
+        ImGui.SameLine();
+
+        ImGui.Dummy(new Vector2(6 * s, 0));
+        ImGui.SameLine();
+
+        // Reset
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        if (TransportButton("\u27F3", btnSizeVec, "Reset simulation"))
+            ResetRequested?.Invoke();
         ImGui.PopStyleColor();
-        ImGui.PopStyleVar();
+        ImGui.SameLine();
+
+        ImGui.Dummy(new Vector2(8 * s, 0));
+        ImGui.SameLine();
+
+        // Speed selector
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 4 * s);
+        ImGui.Text("Speed");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(58 * s);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 4 * s);
+        int currentIdx = Array.IndexOf(SpeedValues, _speedMultiplier);
+        if (currentIdx < 0) currentIdx = 2;
+        if (ImGui.Combo("##speed", ref currentIdx, Speeds, Speeds.Length))
+        {
+            _speedMultiplier = SpeedValues[currentIdx];
+        }
+        ImGui.SameLine();
+
+        ImGui.Dummy(new Vector2(8 * s, 0));
+        ImGui.SameLine();
+
+        // Generation range badge
+        int maxGen = Math.Max(0, _totalGenerations - 1);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 4 * s);
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+        ImGui.Text("Gen");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.Text($"{_startGeneration}\u2013{_endGeneration}");
+        ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+        ImGui.Text($"/ {maxGen}");
+        ImGui.PopStyleColor();
+    }
+
+    private void RenderScrubberRow(float s)
+    {
+        int maxGen = Math.Max(0, _totalGenerations - 1);
+        int end = _endGeneration;
+
+        // Custom-drawn scrubber track
+        float trackHeight = 6 * s;
+        float availWidth = ImGui.GetContentRegionAvail().X;
+        var cursor = ImGui.GetCursorScreenPos();
+        var drawList = ImGui.GetWindowDrawList();
+
+        // Background track
+        var trackMin = new Vector2(cursor.X, cursor.Y + 2 * s);
+        var trackMax = new Vector2(cursor.X + availWidth, trackMin.Y + trackHeight);
+        drawList.AddRectFilled(trackMin, trackMax, Theme.BgSurfaceAltU32, trackHeight * 0.5f);
+
+        // Filled portion
+        if (maxGen > 0)
+        {
+            float fillFraction = (float)_endGeneration / maxGen;
+            var fillMax = new Vector2(trackMin.X + availWidth * fillFraction, trackMax.Y);
+            drawList.AddRectFilled(trackMin, fillMax, Theme.AccentDimU32, trackHeight * 0.5f);
+        }
+
+        // Invisible slider overlaid on top of custom track
+        ImGui.SetNextItemWidth(availWidth);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.SliderGrab, Theme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SliderGrabActive, Theme.AccentHover);
+        ImGui.PushStyleVar(ImGuiStyleVar.GrabMinSize, 14 * s);
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, trackHeight * 0.5f);
+
+        if (ImGui.SliderInt("##scrubber", ref end, 0, maxGen, ""))
+        {
+            _endGeneration = end;
+            if (_startGeneration > _endGeneration)
+                _startGeneration = _endGeneration;
+            RangeChanged?.Invoke(_startGeneration, _endGeneration);
+        }
+
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor(5);
+    }
+
+    private static bool TransportButton(string icon, Vector2 size, string tooltip)
+    {
+        bool clicked = ImGui.Button(icon, size);
+        if (ImGui.IsItemHovered() && !string.IsNullOrEmpty(tooltip))
+            ImGui.SetTooltip(tooltip);
+        return clicked;
     }
 
     private void SeekEnd(int gen)

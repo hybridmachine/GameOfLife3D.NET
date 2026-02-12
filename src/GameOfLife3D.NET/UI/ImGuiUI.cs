@@ -173,32 +173,33 @@ public sealed class ImGuiUI
     {
         float s = _dpiScale;
         ImGui.SetNextWindowPos(new Vector2(10 * s, 10 * s), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(300 * s, 600 * s), ImGuiCond.FirstUseEver);
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.08f, 0.08f, 0.12f, 0.95f));
+        ImGui.SetNextWindowSize(new Vector2(310 * s, 620 * s), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(new Vector2(260 * s, 200 * s), new Vector2(450 * s, 2000 * s));
 
-        if (ImGui.Begin("Controls"))
+        if (ImGui.Begin("Game of Life 3D", ImGuiWindowFlags.NoCollapse))
         {
             RenderSimulationSection();
-            ImGui.Separator();
+            ImGui.Spacing();
             RenderPatternSection();
-            ImGui.Separator();
+            ImGui.Spacing();
             RenderVisualSection();
-            ImGui.Separator();
+            ImGui.Spacing();
             RenderFileSection();
-            ImGui.Separator();
+            ImGui.Spacing();
             RenderCameraSection();
         }
         ImGui.End();
-        ImGui.PopStyleColor();
     }
 
     private void RenderSimulationSection()
     {
-        if (ImGui.CollapsingHeader("Simulation", ImGuiTreeNodeFlags.DefaultOpen))
+        if (UIHelpers.SectionHeader("\u2699", "Simulation"))
         {
-            // Grid size
             float s = _dpiScale;
-            ImGui.SetNextItemWidth(120 * s);
+            float fullWidth = ImGui.GetContentRegionAvail().X;
+
+            // Grid size
+            ImGui.SetNextItemWidth(fullWidth * 0.45f);
             if (ImGui.Combo("Grid Size", ref _selectedGridSizeIdx, GridSizes, GridSizes.Length))
             {
                 int newSize = GridSizeValues[_selectedGridSizeIdx];
@@ -208,7 +209,7 @@ public sealed class ImGuiUI
             }
 
             // Rule preset
-            ImGui.SetNextItemWidth(180 * s);
+            ImGui.SetNextItemWidth(fullWidth * 0.65f);
             if (ImGui.Combo("Rule", ref _selectedRuleIdx, RuleNames, RuleNames.Length))
             {
                 string key = RuleKeys[_selectedRuleIdx];
@@ -223,11 +224,15 @@ public sealed class ImGuiUI
             // Custom rule
             if (_showCustomRule)
             {
-                ImGui.SetNextItemWidth(80 * s);
+                UIHelpers.BeginGroup("custom_rule");
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+                ImGui.Text("Custom Rule Definition");
+                ImGui.PopStyleColor();
+                ImGui.SetNextItemWidth(fullWidth * 0.35f);
                 ImGui.InputText("Birth", ref _customBirth, 9);
-                ImGui.SetNextItemWidth(80 * s);
+                ImGui.SetNextItemWidth(fullWidth * 0.35f);
                 ImGui.InputText("Survival", ref _customSurvival, 9);
-                if (ImGui.Button("Apply Custom Rule"))
+                if (UIHelpers.AccentButton("Apply"))
                 {
                     var birth = _customBirth.Where(c => c >= '0' && c <= '8')
                         .Select(c => c - '0').Distinct().ToArray();
@@ -236,6 +241,7 @@ public sealed class ImGuiUI
                     _engine.SetCustomRule(birth, survival);
                     RecomputeGenerations();
                 }
+                UIHelpers.EndGroup();
             }
 
             // Toroidal
@@ -244,34 +250,32 @@ public sealed class ImGuiUI
                 _engine.SetToroidal(_toroidal);
                 RecomputeGenerations();
             }
+            UIHelpers.Tooltip("Wrap grid edges so cells connect across boundaries");
 
-            // Generations
-            ImGui.Spacing();
-            ImGui.Text($"Generations: {_engine.GenerationCount}");
+            UIHelpers.ThinSeparator();
 
-            if (ImGui.Button("Compute 10"))
+            // Generation count display
+            UIHelpers.LabelValue("Generations:", _engine.GenerationCount.ToString());
+
+            // Compute buttons
+            int computeClicked = UIHelpers.ButtonRow(["+ 10", "+ 50", "+ 100"]);
+            if (computeClicked >= 0)
             {
-                _engine.ComputeGenerations(_engine.GenerationCount + 10);
+                int[] amounts = [10, 50, 100];
+                _engine.ComputeGenerations(_engine.GenerationCount + amounts[computeClicked]);
                 SyncDisplayRange();
             }
-            ImGui.SameLine();
-            if (ImGui.Button("Compute 50"))
-            {
-                _engine.ComputeGenerations(_engine.GenerationCount + 50);
-                SyncDisplayRange();
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Compute 100"))
-            {
-                _engine.ComputeGenerations(_engine.GenerationCount + 100);
-                SyncDisplayRange();
-            }
+
+            UIHelpers.ThinSeparator();
 
             // Random init
-            ImGui.SetNextItemWidth(120 * s);
-            ImGui.SliderFloat("Density", ref _randomDensity, 0.05f, 0.8f, "%.2f");
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Random Seed");
+            ImGui.PopStyleColor();
+            ImGui.SetNextItemWidth(fullWidth - 70 * s);
+            ImGui.SliderFloat("##density", ref _randomDensity, 0.05f, 0.8f, "Density: %.0f%%");
             ImGui.SameLine();
-            if (ImGui.Button("Random"))
+            if (UIHelpers.AccentButton("Go"))
             {
                 _engine.InitializeRandom(_randomDensity);
                 SyncDisplayRange();
@@ -281,83 +285,115 @@ public sealed class ImGuiUI
 
     private void RenderPatternSection()
     {
-        if (ImGui.CollapsingHeader("Patterns", ImGuiTreeNodeFlags.DefaultOpen))
+        if (UIHelpers.SectionHeader("\u25A6", "Patterns"))
         {
+            float fullWidth = ImGui.GetContentRegionAvail().X;
+            float spacing = ImGui.GetStyle().ItemSpacing.X;
+
+            // Render pattern buttons flowing across available width
+            float currentX = 0;
             foreach (var kvp in _patternLoader.GetBuiltInPatternMap())
             {
+                float btnWidth = ImGui.CalcTextSize(kvp.Value.Name).X + ImGui.GetStyle().FramePadding.X * 2;
+
+                // Wrap to next line if this button wouldn't fit
+                if (currentX > 0 && currentX + btnWidth > fullWidth)
+                {
+                    currentX = 0;
+                }
+                else if (currentX > 0)
+                {
+                    ImGui.SameLine();
+                }
+
                 if (ImGui.Button(kvp.Value.Name))
                 {
                     _engine.InitializeFromPattern(kvp.Value.Pattern);
                     SyncDisplayRange();
                 }
-                if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip(kvp.Value.Description);
-                ImGui.SameLine();
+                UIHelpers.Tooltip(kvp.Value.Description);
+
+                currentX += btnWidth + spacing;
             }
-            ImGui.NewLine();
         }
     }
 
     private void RenderVisualSection()
     {
-        if (ImGui.CollapsingHeader("Visual Settings", ImGuiTreeNodeFlags.DefaultOpen))
+        if (UIHelpers.SectionHeader("\u25C9", "Appearance"))
         {
             var settings = _renderer.Settings;
+            float fullWidth = ImGui.GetContentRegionAvail().X;
 
-            // Cell padding
-            if (ImGui.SliderFloat("Padding", ref _cellPadding, 0f, 50f, "%.0f%%"))
+            // ── Geometry ──
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Geometry");
+            ImGui.PopStyleColor();
+
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.SliderFloat("##padding", ref _cellPadding, 0f, 50f, "Cell Padding: %.0f%%"))
             {
                 settings.CellPadding = _cellPadding / 100f;
                 _renderer.InvalidateState();
             }
 
-            // Face color cycling
-            if (ImGui.Checkbox("Face Color Cycling", ref _faceColorCycling))
-                settings.FaceColorCycling = _faceColorCycling;
-
-            // Solid color (when cycling off)
-            if (!_faceColorCycling)
-            {
-                if (ImGui.ColorEdit3("Cell Color", ref _cellColor))
-                    settings.CellColor = _cellColor;
-            }
-
-            // Edge/wireframe
             if (ImGui.Checkbox("Wireframe", ref _showWireframe))
                 settings.ShowWireframe = _showWireframe;
+
+            if (ImGui.Checkbox("Grid Lines", ref _showGridLines))
+                settings.ShowGridLines = _showGridLines;
+
+            if (ImGui.Checkbox("Generation Labels", ref _showGenerationLabels))
+                settings.ShowGenerationLabels = _showGenerationLabels;
+
+            UIHelpers.ThinSeparator();
+
+            // ── Colors ──
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Colors");
+            ImGui.PopStyleColor();
+
+            if (ImGui.Checkbox("Face Color Cycling", ref _faceColorCycling))
+                settings.FaceColorCycling = _faceColorCycling;
+            UIHelpers.Tooltip("Animate face colors based on generation using a gradient");
+
+            if (!_faceColorCycling)
+            {
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.ColorEdit3("##cellcolor", ref _cellColor))
+                    settings.CellColor = _cellColor;
+            }
 
             if (_showWireframe)
             {
                 if (ImGui.Checkbox("Edge Color Cycling", ref _edgeColorCycling))
                     settings.EdgeColorCycling = _edgeColorCycling;
+                UIHelpers.Tooltip("Animate edge colors with hue rotation");
 
                 if (_edgeColorCycling)
                 {
-                    if (ImGui.SliderFloat("Hue Angle", ref _edgeColorAngle, 0f, 360f, "%.0f"))
+                    ImGui.SetNextItemWidth(fullWidth);
+                    if (ImGui.SliderFloat("##hue", ref _edgeColorAngle, 0f, 360f, "Hue Offset: %.0f\u00B0"))
                         settings.EdgeColorAngle = _edgeColorAngle;
                 }
                 else
                 {
-                    if (ImGui.ColorEdit3("Edge Color", ref _edgeColor))
+                    ImGui.SetNextItemWidth(fullWidth);
+                    if (ImGui.ColorEdit3("##edgecolor", ref _edgeColor))
                         settings.EdgeColor = _edgeColor;
                 }
             }
-
-            // Grid lines
-            if (ImGui.Checkbox("Grid Lines", ref _showGridLines))
-                settings.ShowGridLines = _showGridLines;
-
-            // Generation labels
-            if (ImGui.Checkbox("Generation Labels", ref _showGenerationLabels))
-                settings.ShowGenerationLabels = _showGenerationLabels;
         }
     }
 
     private void RenderFileSection()
     {
-        if (ImGui.CollapsingHeader("File"))
+        if (UIHelpers.SectionHeader("\u2B29", "File", defaultOpen: false))
         {
-            if (ImGui.Button("Load Pattern (RLE)"))
+            float fullWidth = ImGui.GetContentRegionAvail().X;
+            float btnWidth = (fullWidth - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
+
+            if (ImGui.Button("Load Pattern", new Vector2(btnWidth, 0)))
             {
                 var path = FileDialogHelper.OpenFile("rle");
                 if (path != null)
@@ -375,25 +411,10 @@ public sealed class ImGuiUI
                     }
                 }
             }
+            UIHelpers.Tooltip("Load a pattern from an RLE file");
 
-            if (ImGui.Button("Save Session"))
-            {
-                var path = FileDialogHelper.SaveFile("json");
-                if (path != null)
-                {
-                    try
-                    {
-                        SessionManager.Save(path, _engine, _camera, _renderer.Settings,
-                            _displayStart, _displayEnd);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine($"Error saving session: {ex.Message}");
-                    }
-                }
-            }
-
-            if (ImGui.Button("Load Session"))
+            ImGui.SameLine();
+            if (ImGui.Button("Load Session", new Vector2(btnWidth, 0)))
             {
                 var path = FileDialogHelper.OpenFile("json");
                 if (path != null)
@@ -428,18 +449,52 @@ public sealed class ImGuiUI
                     }
                 }
             }
+            UIHelpers.Tooltip("Load a previously saved session (JSON)");
+
+            if (UIHelpers.AccentButton("Save Session", new Vector2(fullWidth, 0)))
+            {
+                var path = FileDialogHelper.SaveFile("json");
+                if (path != null)
+                {
+                    try
+                    {
+                        SessionManager.Save(path, _engine, _camera, _renderer.Settings,
+                            _displayStart, _displayEnd);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Error saving session: {ex.Message}");
+                    }
+                }
+            }
+            UIHelpers.Tooltip("Save current session to a JSON file");
         }
     }
 
     private void RenderCameraSection()
     {
-        if (ImGui.CollapsingHeader("Camera"))
+        if (UIHelpers.SectionHeader("\u29BE", "Camera", defaultOpen: false))
         {
-            if (ImGui.Button("Reset Camera"))
+            if (ImGui.Button("Reset Camera", new Vector2(ImGui.GetContentRegionAvail().X, 0)))
                 _camera.Reset();
 
-            ImGui.TextWrapped("LMB: Orbit | RMB: Pan | Scroll: Zoom");
-            ImGui.TextWrapped("WASD: Move | QE: Rotate | RF: Up/Down");
+            ImGui.Spacing();
+            UIHelpers.BeginGroup("camera_help");
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Mouse");
+            ImGui.PopStyleColor();
+            UIHelpers.LabelValue("  LMB", "Orbit");
+            UIHelpers.LabelValue("  RMB", "Pan");
+            UIHelpers.LabelValue("  Scroll", "Zoom");
+
+            ImGui.Spacing();
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Keyboard");
+            ImGui.PopStyleColor();
+            UIHelpers.LabelValue("  WASD", "Move");
+            UIHelpers.LabelValue("  QE", "Rotate");
+            UIHelpers.LabelValue("  RF", "Up / Down");
+            UIHelpers.EndGroup();
         }
     }
 
