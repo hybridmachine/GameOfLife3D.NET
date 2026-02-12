@@ -96,13 +96,13 @@ public sealed class TimelineBar
         float btnSize = 28 * s;
         var btnSizeVec = new Vector2(btnSize, btnSize);
 
-        // Transport: Skip to start
-        if (TransportButton("\u23EE", btnSizeVec, "First generation"))
+        // Transport: Skip to start  (|\u25C0 = |◀)
+        if (TransportButton("|\u25C0", btnSizeVec, "First generation"))
             SeekEnd(0);
         ImGui.SameLine();
 
-        // Step back
-        if (TransportButton("\u23F4", btnSizeVec, "Previous generation"))
+        // Step back  (\u25C0 = ◀)
+        if (TransportButton("\u25C0", btnSizeVec, "Previous generation"))
             SeekEnd(_endGeneration - 1);
         ImGui.SameLine();
 
@@ -113,7 +113,7 @@ public sealed class TimelineBar
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Theme.AccentDim);
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, Theme.Accent);
         }
-        string playIcon = _isPlaying ? "\u23F8" : "\u25B6";
+        string playIcon = _isPlaying ? "\u275A\u275A" : "\u25B6";  // ❚❚ or ▶
         string playTip = _isPlaying ? "Pause" : "Play";
         if (TransportButton(playIcon, btnSizeVec, playTip))
         {
@@ -124,13 +124,13 @@ public sealed class TimelineBar
             ImGui.PopStyleColor(3);
         ImGui.SameLine();
 
-        // Step forward
-        if (TransportButton("\u23F5", btnSizeVec, "Next generation"))
+        // Step forward  (\u25B7 = ▷)
+        if (TransportButton("\u25B7", btnSizeVec, "Next generation"))
             SeekEnd(_endGeneration + 1);
         ImGui.SameLine();
 
-        // Skip to end
-        if (TransportButton("\u23ED", btnSizeVec, "Last generation"))
+        // Skip to end  (\u25B6| = ▶|)
+        if (TransportButton("\u25B6|", btnSizeVec, "Last generation"))
             SeekEnd(Math.Max(0, _totalGenerations - 1));
         ImGui.SameLine();
 

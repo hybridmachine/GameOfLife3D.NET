@@ -163,7 +163,7 @@ public static class Theme
 
         c[(int)ImGuiCol.Tab]                   = Tab;
         c[(int)ImGuiCol.TabHovered]            = TabHovered;
-        c[(int)ImGuiCol.TabSelected]           = TabSelected;
+        c[(int)ImGuiCol.TabActive]           = TabSelected;
 
         c[(int)ImGuiCol.PlotLines]             = Accent;
         c[(int)ImGuiCol.PlotLinesHovered]      = AccentHover;

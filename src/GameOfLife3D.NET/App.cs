@@ -60,14 +60,45 @@ public sealed class App : IDisposable
         {
             var io = ImGui.GetIO();
             io.Fonts.Clear();
+            float fontSize = 14.0f * _dpiScale;
             unsafe
             {
-                var config = ImGuiNative.ImFontConfig_ImFontConfig();
-                config->SizePixels = 13.0f * _dpiScale;
-                config->OversampleH = 2;
-                config->OversampleV = 2;
-                io.Fonts.AddFontDefault(config);
-                ImGuiNative.ImFontConfig_destroy(config);
+                // Try to load a system font with good Unicode symbol coverage
+                string? fontPath = FindSystemFont();
+                if (fontPath != null)
+                {
+                    var config = ImGuiNative.ImFontConfig_ImFontConfig();
+                    config->OversampleH = 2;
+                    config->OversampleV = 2;
+
+                    // Build glyph ranges: default + geometric shapes + misc symbols + arrows
+                    var builder = new ImFontGlyphRangesBuilderPtr(ImGuiNative.ImFontGlyphRangesBuilder_ImFontGlyphRangesBuilder());
+                    builder.AddRanges(io.Fonts.GetGlyphRangesDefault());
+                    builder.AddChar((char)0x00B0); // °
+                    builder.AddRange(0x2010, 0x2030); // General punctuation (–, —, etc.)
+                    builder.AddRange(0x2190, 0x21FF); // Arrows
+                    builder.AddRange(0x2500, 0x257F); // Box drawing
+                    builder.AddRange(0x2580, 0x259F); // Block elements
+                    builder.AddRange(0x25A0, 0x25FF); // Geometric shapes (▶◀◉▦ etc.)
+                    builder.AddRange(0x2600, 0x26FF); // Misc symbols (⚙ etc.)
+                    builder.AddRange(0x2700, 0x27BF); // Dingbats (❚ etc.)
+                    builder.AddRange(0x27C0, 0x27FF); // Supplemental arrows (⟳ etc.)
+                    builder.BuildRanges(out var ranges);
+
+                    io.Fonts.AddFontFromFileTTF(fontPath, fontSize, config, ranges.Data);
+                    builder.Destroy();
+                    ImGuiNative.ImFontConfig_destroy(config);
+                }
+                else
+                {
+                    // Fallback to ImGui default font
+                    var config = ImGuiNative.ImFontConfig_ImFontConfig();
+                    config->SizePixels = fontSize;
+                    config->OversampleH = 2;
+                    config->OversampleV = 2;
+                    io.Fonts.AddFontDefault(config);
+                    ImGuiNative.ImFontConfig_destroy(config);
+                }
             }
         });
 
@@ -185,8 +216,41 @@ public sealed class App : IDisposable
         _gl?.Dispose();
     }
 
+    private static string? FindSystemFont()
+    {
+        // Prefer fonts with good Unicode symbol coverage
+        string[] candidates =
+        [
+            // Linux
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",         // Arch
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",       // Fedora
+            // Windows
+            @"C:\Windows\Fonts\segoeui.ttf",
+            @"C:\Windows\Fonts\arial.ttf",
+        ];
+
+        foreach (var path in candidates)
+        {
+            if (File.Exists(path))
+                return path;
+        }
+        return null;
+    }
+
     public void Dispose()
     {
         _window?.Dispose();
+    }
+}
+
+static class ImFontGlyphRangesBuilderExtensions
+{
+    public static void AddRange(this ImFontGlyphRangesBuilderPtr builder, int start, int end)
+    {
+        for (int c = start; c <= end; c++)
+            builder.AddChar((char)c);
     }
 }

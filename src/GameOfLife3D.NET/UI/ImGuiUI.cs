@@ -388,7 +388,7 @@ public sealed class ImGuiUI
 
     private void RenderFileSection()
     {
-        if (UIHelpers.SectionHeader("\u2B29", "File", defaultOpen: false))
+        if (UIHelpers.SectionHeader("\u25C6", "File", defaultOpen: false))
         {
             float fullWidth = ImGui.GetContentRegionAvail().X;
             float btnWidth = (fullWidth - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
@@ -473,7 +473,7 @@ public sealed class ImGuiUI
 
     private void RenderCameraSection()
     {
-        if (UIHelpers.SectionHeader("\u29BE", "Camera", defaultOpen: false))
+        if (UIHelpers.SectionHeader("\u25CE", "Camera", defaultOpen: false))
         {
             if (ImGui.Button("Reset Camera", new Vector2(ImGui.GetContentRegionAvail().X, 0)))
                 _camera.Reset();

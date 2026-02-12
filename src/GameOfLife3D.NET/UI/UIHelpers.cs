@@ -179,7 +179,7 @@ public static class UIHelpers
         ImGui.PushStyleColor(ImGuiCol.Border, Theme.BorderLight);
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 6f);
         ImGui.PushStyleVar(ImGuiStyleVar.ChildBorderSize, 1f);
-        ImGui.BeginChild(id, new Vector2(0, height), ImGuiChildFlags.Borders | ImGuiChildFlags.AutoResizeY, ImGuiWindowFlags.None);
+        ImGui.BeginChild(id, new Vector2(0, height), ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY, ImGuiWindowFlags.None);
     }
 
     /// <summary>
