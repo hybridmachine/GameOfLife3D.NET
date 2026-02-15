@@ -115,8 +115,11 @@ public sealed class App : IDisposable
             }
         });
 
-        // Apply the centralized UI theme (handles both sizing and colors)
-        Theme.Apply(_dpiScale);
+        // Scale font rendering back to logical pixel size (atlas is high-res for crispness)
+        ImGui.GetIO().FontGlobalScale = 1.0f / _dpiScale;
+
+        // Apply the centralized UI theme (colors and base geometry, no DPI scaling needed)
+        Theme.Apply();
 
         // Initialize engine
         _engine = new GameEngine(50);
@@ -149,7 +152,7 @@ public sealed class App : IDisposable
         _editController = new EditingController(_engine, _renderer, _rayCaster);
 
         // Initialize UI
-        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _editController, _dpiScale);
+        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _editController);
         _ui.SyncDisplayRange();
         _ui.OnScreenshotRequested = TakeScreenshot;
         _ui.OnExportSTL = path => ExportModel(path, "stl");

@@ -8,7 +8,6 @@ public sealed class TimelineBar
     private static readonly string[] Speeds = ["0.25x", "0.5x", "1x", "2x", "4x", "8x"];
     private static readonly float[] SpeedValues = [0.25f, 0.5f, 1f, 2f, 4f, 8f];
 
-    private readonly float _dpiScale;
     private int _startGeneration;
     private int _endGeneration;
     private int _totalGenerations;
@@ -24,9 +23,8 @@ public sealed class TimelineBar
     public event Action<bool>? PlayToggled;
     public event Action? ResetRequested;
 
-    public TimelineBar(float dpiScale = 1.0f)
+    public TimelineBar()
     {
-        _dpiScale = dpiScale;
     }
 
     public void SetTotalGenerations(int total)
@@ -56,16 +54,15 @@ public sealed class TimelineBar
 
     public void Render(int windowWidth, int windowHeight)
     {
-        float s = _dpiScale;
-        float barHeight = 64f * s;
-        float statusBarHeight = 30f * s;
+        float barHeight = 64f;
+        float statusBarHeight = 30f;
         float barY = windowHeight - barHeight - statusBarHeight;
 
         ImGui.SetNextWindowPos(new Vector2(0, barY));
         ImGui.SetNextWindowSize(new Vector2(windowWidth, barHeight));
 
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(14 * s, 8 * s));
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6 * s, 6 * s));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(14, 8));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6, 6));
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.07f, 0.07f, 0.10f, 0.95f));
         ImGui.PushStyleColor(ImGuiCol.Border, Theme.Border);
 
@@ -80,10 +77,10 @@ public sealed class TimelineBar
             drawList.AddLine(
                 winPos,
                 new Vector2(winPos.X + windowWidth, winPos.Y),
-                Theme.AccentDimU32, 2f * s);
+                Theme.AccentDimU32, 2f);
 
-            RenderTransportRow(s);
-            RenderScrubberRow(s);
+            RenderTransportRow();
+            RenderScrubberRow();
         }
         ImGui.End();
 
@@ -91,17 +88,17 @@ public sealed class TimelineBar
         ImGui.PopStyleVar(2);
     }
 
-    private void RenderTransportRow(float s)
+    private void RenderTransportRow()
     {
-        float btnSize = 28 * s;
+        float btnSize = 28;
         var btnSizeVec = new Vector2(btnSize, btnSize);
 
-        // Transport: Skip to start  (|\u25C0 = |◀)
+        // Transport: Skip to start  (|◀)
         if (TransportButton("|\u25C0", btnSizeVec, "First generation"))
             SeekEnd(0);
         ImGui.SameLine();
 
-        // Step back  (\u25C0 = ◀)
+        // Step back  (◀)
         if (TransportButton("\u25C0", btnSizeVec, "Previous generation"))
             SeekEnd(_endGeneration - 1);
         ImGui.SameLine();
@@ -124,17 +121,17 @@ public sealed class TimelineBar
             ImGui.PopStyleColor(3);
         ImGui.SameLine();
 
-        // Step forward  (\u25B7 = ▷)
+        // Step forward  (▷)
         if (TransportButton("\u25B7", btnSizeVec, "Next generation"))
             SeekEnd(_endGeneration + 1);
         ImGui.SameLine();
 
-        // Skip to end  (\u25B6| = ▶|)
+        // Skip to end  (▶|)
         if (TransportButton("\u25B6|", btnSizeVec, "Last generation"))
             SeekEnd(Math.Max(0, _totalGenerations - 1));
         ImGui.SameLine();
 
-        ImGui.Dummy(new Vector2(6 * s, 0));
+        ImGui.Dummy(new Vector2(6, 0));
         ImGui.SameLine();
 
         // Reset
@@ -144,17 +141,17 @@ public sealed class TimelineBar
         ImGui.PopStyleColor();
         ImGui.SameLine();
 
-        ImGui.Dummy(new Vector2(8 * s, 0));
+        ImGui.Dummy(new Vector2(8, 0));
         ImGui.SameLine();
 
         // Speed selector
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 4 * s);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 4);
         ImGui.Text("Speed");
         ImGui.PopStyleColor();
         ImGui.SameLine();
-        ImGui.SetNextItemWidth(58 * s);
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 4 * s);
+        ImGui.SetNextItemWidth(58);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 4);
         int currentIdx = Array.IndexOf(SpeedValues, _speedMultiplier);
         if (currentIdx < 0) currentIdx = 2;
         if (ImGui.Combo("##speed", ref currentIdx, Speeds, Speeds.Length))
@@ -163,12 +160,12 @@ public sealed class TimelineBar
         }
         ImGui.SameLine();
 
-        ImGui.Dummy(new Vector2(8 * s, 0));
+        ImGui.Dummy(new Vector2(8, 0));
         ImGui.SameLine();
 
         // Generation range badge
         int maxGen = Math.Max(0, _totalGenerations - 1);
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 4 * s);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 4);
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
         ImGui.Text("Gen");
         ImGui.PopStyleColor();
@@ -180,19 +177,19 @@ public sealed class TimelineBar
         ImGui.PopStyleColor();
     }
 
-    private void RenderScrubberRow(float s)
+    private void RenderScrubberRow()
     {
         int maxGen = Math.Max(0, _totalGenerations - 1);
         int end = _endGeneration;
 
         // Custom-drawn scrubber track
-        float trackHeight = 6 * s;
+        float trackHeight = 6;
         float availWidth = ImGui.GetContentRegionAvail().X;
         var cursor = ImGui.GetCursorScreenPos();
         var drawList = ImGui.GetWindowDrawList();
 
         // Background track
-        var trackMin = new Vector2(cursor.X, cursor.Y + 2 * s);
+        var trackMin = new Vector2(cursor.X, cursor.Y + 2);
         var trackMax = new Vector2(cursor.X + availWidth, trackMin.Y + trackHeight);
         drawList.AddRectFilled(trackMin, trackMax, Theme.BgSurfaceAltU32, trackHeight * 0.5f);
 
@@ -211,7 +208,7 @@ public sealed class TimelineBar
         ImGui.PushStyleColor(ImGuiCol.FrameBgActive, Vector4.Zero);
         ImGui.PushStyleColor(ImGuiCol.SliderGrab, Theme.Accent);
         ImGui.PushStyleColor(ImGuiCol.SliderGrabActive, Theme.AccentHover);
-        ImGui.PushStyleVar(ImGuiStyleVar.GrabMinSize, 14 * s);
+        ImGui.PushStyleVar(ImGuiStyleVar.GrabMinSize, 14);
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, trackHeight * 0.5f);
 
         if (ImGui.SliderInt("##scrubber", ref end, 0, maxGen, ""))

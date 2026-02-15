@@ -5,16 +5,14 @@ namespace GameOfLife3D.NET.UI;
 
 public sealed class StatusBar
 {
-    private readonly float _dpiScale;
     private int _fps;
     private int _frameCount;
     private double _lastFpsTime;
 
     public int Fps => _fps;
 
-    public StatusBar(float dpiScale = 1.0f)
+    public StatusBar()
     {
-        _dpiScale = dpiScale;
     }
 
     public void UpdateFPS(double currentTime)
@@ -32,10 +30,9 @@ public sealed class StatusBar
 
     public void Render(int displayStart, int displayEnd, string ruleString, int cellCount, int windowWidth, int windowHeight)
     {
-        float s = _dpiScale;
         var drawList = ImGui.GetForegroundDrawList();
 
-        float padding = 10f * s;
+        float padding = 10f;
         float barHeight = ImGui.GetTextLineHeight() + padding * 2;
 
         // Background
@@ -51,42 +48,42 @@ public sealed class StatusBar
         float textY = windowHeight - barHeight + padding;
 
         // Segment: Generation
-        x = DrawSegment(drawList, x, textY, "GEN", $"{displayStart}\u2013{displayEnd}", s);
+        x = DrawSegment(drawList, x, textY, "GEN", $"{displayStart}\u2013{displayEnd}");
 
-        x = DrawDivider(drawList, x, textY, s);
+        x = DrawDivider(drawList, x, textY);
 
         // Segment: Rule
-        x = DrawSegment(drawList, x, textY, "RULE", ruleString, s);
+        x = DrawSegment(drawList, x, textY, "RULE", ruleString);
 
-        x = DrawDivider(drawList, x, textY, s);
+        x = DrawDivider(drawList, x, textY);
 
         // Segment: Cells
-        x = DrawSegment(drawList, x, textY, "CELLS", FormatNumber(cellCount), s);
+        x = DrawSegment(drawList, x, textY, "CELLS", FormatNumber(cellCount));
 
-        x = DrawDivider(drawList, x, textY, s);
+        x = DrawDivider(drawList, x, textY);
 
         // Segment: FPS — color coded
         uint fpsColor = _fps >= 55 ? Theme.TextPrimaryU32
             : _fps >= 30 ? ImGui.ColorConvertFloat4ToU32(Theme.StatusYellow)
             : ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.3f, 0.3f, 1f));
-        x = DrawSegment(drawList, x, textY, "FPS", _fps.ToString(), s, fpsColor);
+        x = DrawSegment(drawList, x, textY, "FPS", _fps.ToString(), fpsColor);
 
         // Edit badge
         if (ShowEditBadge)
         {
-            x = DrawDivider(drawList, x, textY, s);
+            x = DrawDivider(drawList, x, textY);
             drawList.AddText(new Vector2(x, textY), Theme.AccentU32, "EDIT");
         }
     }
 
-    private static float DrawSegment(ImDrawListPtr drawList, float x, float y, string label, string value, float s, uint valueColor = 0)
+    private static float DrawSegment(ImDrawListPtr drawList, float x, float y, string label, string value, uint valueColor = 0)
     {
         if (valueColor == 0)
             valueColor = Theme.TextPrimaryU32;
 
         // Label
         drawList.AddText(new Vector2(x, y), Theme.TextMutedU32, label);
-        x += ImGui.CalcTextSize(label).X + 5 * s;
+        x += ImGui.CalcTextSize(label).X + 5;
 
         // Value
         drawList.AddText(new Vector2(x, y), valueColor, value);
@@ -95,9 +92,9 @@ public sealed class StatusBar
         return x;
     }
 
-    private static float DrawDivider(ImDrawListPtr drawList, float x, float y, float s)
+    private static float DrawDivider(ImDrawListPtr drawList, float x, float y)
     {
-        float gap = 10 * s;
+        float gap = 10;
         float divX = x + gap;
         float lineHeight = ImGui.GetTextLineHeight();
         drawList.AddLine(

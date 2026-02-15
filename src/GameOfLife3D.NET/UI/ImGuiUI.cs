@@ -17,7 +17,6 @@ public sealed class ImGuiUI
     private readonly EditingController? _editController;
     private readonly TimelineBar _timeline;
     private readonly StatusBar _statusBar;
-    private readonly float _dpiScale;
 
     // UI state
     private int _selectedGridSizeIdx = 2; // 50
@@ -107,16 +106,15 @@ public sealed class ImGuiUI
     public Action<string>? OnExportSTL { get; set; }
     public Action<string>? OnExportOBJ { get; set; }
 
-    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, EditingController? editController = null, float dpiScale = 1.0f)
+    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, EditingController? editController = null)
     {
         _engine = engine;
         _renderer = renderer;
         _camera = camera;
         _patternLoader = patternLoader;
         _editController = editController;
-        _dpiScale = dpiScale;
-        _timeline = new TimelineBar(dpiScale);
-        _statusBar = new StatusBar(dpiScale);
+        _timeline = new TimelineBar();
+        _statusBar = new StatusBar();
 
         // Sync initial state from render settings
         var settings = renderer.Settings;
@@ -200,19 +198,21 @@ public sealed class ImGuiUI
 
     public void Render(int windowWidth, int windowHeight)
     {
-        RenderControlPanel();
+        RenderControlPanel(windowWidth, windowHeight);
         _timeline.Render(windowWidth, windowHeight);
         _statusBar.ShowEditBadge = _editController?.IsActive ?? false;
         _statusBar.Render(_displayStart, _displayEnd, _engine.RuleString,
             _renderer.GetVisibleCellCount(), windowWidth, windowHeight);
     }
 
-    private void RenderControlPanel()
+    private void RenderControlPanel(int windowWidth, int windowHeight)
     {
-        float s = _dpiScale;
-        ImGui.SetNextWindowPos(new Vector2(10 * s, 10 * s), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(310 * s, 620 * s), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSizeConstraints(new Vector2(260 * s, 200 * s), new Vector2(450 * s, 2000 * s));
+        float panelWidth = Math.Clamp(windowWidth * 0.22f, 260, 400);
+        float panelHeight = Math.Clamp(windowHeight * 0.7f, 300, windowHeight - 100f);
+
+        ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(panelWidth, panelHeight), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(new Vector2(260, 200), new Vector2(windowWidth * 0.35f, windowHeight - 100f));
 
         if (ImGui.Begin("Game of Life 3D", ImGuiWindowFlags.NoCollapse))
         {
@@ -237,7 +237,6 @@ public sealed class ImGuiUI
     {
         if (UIHelpers.SectionHeader("\u2699", "Simulation"))
         {
-            float s = _dpiScale;
             float fullWidth = ImGui.GetContentRegionAvail().X;
 
             // Grid size
@@ -314,7 +313,7 @@ public sealed class ImGuiUI
             ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
             ImGui.Text("Random Seed");
             ImGui.PopStyleColor();
-            ImGui.SetNextItemWidth(fullWidth - 70 * s);
+            ImGui.SetNextItemWidth(fullWidth - 70);
             ImGui.SliderFloat("##density", ref _randomDensity, 0.05f, 0.8f, "Density: %.0f%%");
             ImGui.SameLine();
             if (UIHelpers.AccentButton("Go"))
@@ -355,7 +354,7 @@ public sealed class ImGuiUI
                 float fullWidth = ImGui.GetContentRegionAvail().X;
                 ImGui.PlotLines("##pop", ref _populationData[0], _populationData.Length,
                     0, $"Population ({_populationData.Length} gens)",
-                    min * 0.9f, max * 1.1f, new Vector2(fullWidth, 60 * _dpiScale));
+                    min * 0.9f, max * 1.1f, new Vector2(fullWidth, 60));
             }
             else
             {

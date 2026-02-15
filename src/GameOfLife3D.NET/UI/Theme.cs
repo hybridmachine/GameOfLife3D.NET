@@ -84,7 +84,7 @@ public static class Theme
     /// Applies the full theme to ImGui. Call once after ImGui initialization.
     /// DPI scaling should already have been applied via style.ScaleAllSizes().
     /// </summary>
-    public static void Apply(float dpiScale)
+    public static void Apply()
     {
         var style = ImGui.GetStyle();
 
@@ -112,9 +112,6 @@ public static class Theme
         style.GrabMinSize       = 10f;
 
         style.WindowTitleAlign  = new Vector2(0.5f, 0.5f);
-
-        // Scale all sizes for DPI
-        style.ScaleAllSizes(dpiScale);
 
         // ── Colors ─────────────────────────────────────────────────
         var c = style.Colors;
