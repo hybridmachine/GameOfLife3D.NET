@@ -2,6 +2,7 @@
 
 in vec3 vWorldPosition;
 in float vGenerationT;
+in float vViewDistance;
 
 uniform bool uColorCycling;
 uniform vec3 uEdgeColor;
@@ -9,6 +10,16 @@ uniform float uTime;
 uniform float uMinY;
 uniform float uMaxY;
 uniform float uHueAngle;
+
+// Fog
+uniform bool uFogEnabled;
+uniform float uFogStart;
+uniform float uFogEnd;
+uniform vec3 uFogColor;
+
+// Clip plane
+uniform bool uClipEnabled;
+uniform float uClipY;
 
 out vec4 FragColor;
 
@@ -53,6 +64,14 @@ vec3 hsl2rgb(vec3 hsl)
 
 void main()
 {
+    // Clip plane
+    if (uClipEnabled && vWorldPosition.y > uClipY)
+        discard;
+
+    // Skip wireframe for preview cells
+    if (vGenerationT < 0.0)
+        discard;
+
     vec3 color;
     if (uColorCycling)
     {
@@ -66,5 +85,16 @@ void main()
     {
         color = uEdgeColor;
     }
-    FragColor = vec4(color, 0.8);
+
+    float alpha = 0.8;
+
+    // Fog
+    if (uFogEnabled)
+    {
+        float fogFactor = clamp((vViewDistance - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
+        color = mix(color, uFogColor, fogFactor);
+        alpha = mix(alpha, 0.0, fogFactor);
+    }
+
+    FragColor = vec4(color, alpha);
 }

@@ -129,6 +129,29 @@ public sealed class GameEngine
         return null;
     }
 
+    public void SetCellInGen0(int x, int y, bool alive)
+    {
+        if (_generations.Count == 0) return;
+
+        var gen0 = _generations[0];
+        if (x < 0 || x >= _gridSize || y < 0 || y >= _gridSize) return;
+
+        gen0.Cells[x, y] = alive;
+
+        // Clear computed generations (keep only gen 0)
+        if (_generations.Count > 1)
+            _generations.RemoveRange(1, _generations.Count - 1);
+
+        // Rebuild live cells list for gen 0
+        var liveCells = new List<Vector2Int>();
+        for (int gx = 0; gx < _gridSize; gx++)
+            for (int gy = 0; gy < _gridSize; gy++)
+                if (gen0.Cells[gx, gy])
+                    liveCells.Add(new Vector2Int(gx, gy));
+
+        _generations[0] = new Generation(0, gen0.Cells, liveCells);
+    }
+
     public void Clear() => _generations.Clear();
 
     public GameState ExportState() => new()

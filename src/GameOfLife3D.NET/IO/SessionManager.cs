@@ -41,6 +41,35 @@ public sealed class RenderSessionData
     public float EdgeColorR { get; set; } = 1f;
     public float EdgeColorG { get; set; } = 1f;
     public float EdgeColorB { get; set; } = 1f;
+
+    // Fog
+    public bool FogEnabled { get; set; }
+    public float FogStart { get; set; } = 20f;
+    public float FogEnd { get; set; } = 100f;
+    public float FogColorR { get; set; } = 0.05f;
+    public float FogColorG { get; set; } = 0.05f;
+    public float FogColorB { get; set; } = 0.08f;
+
+    // Clip
+    public bool ClipEnabled { get; set; }
+    public float ClipY { get; set; } = 25f;
+
+    // Background
+    public int BackgroundMode { get; set; }
+    public float BgTopR { get; set; } = 0.08f;
+    public float BgTopG { get; set; } = 0.08f;
+    public float BgTopB { get; set; } = 0.15f;
+    public float BgBottomR { get; set; } = 0.02f;
+    public float BgBottomG { get; set; } = 0.02f;
+    public float BgBottomB { get; set; } = 0.04f;
+
+    // Bloom
+    public bool BloomEnabled { get; set; }
+    public float BloomThreshold { get; set; } = 0.6f;
+    public float BloomIntensity { get; set; } = 0.5f;
+
+    // Beveled cubes
+    public bool UseBeveledCubes { get; set; }
 }
 
 public static class SessionManager
@@ -106,6 +135,30 @@ public static class SessionManager
         EdgeColorR = s.EdgeColor.X,
         EdgeColorG = s.EdgeColor.Y,
         EdgeColorB = s.EdgeColor.Z,
+        // Fog
+        FogEnabled = s.FogEnabled,
+        FogStart = s.FogStart,
+        FogEnd = s.FogEnd,
+        FogColorR = s.FogColor.X,
+        FogColorG = s.FogColor.Y,
+        FogColorB = s.FogColor.Z,
+        // Clip
+        ClipEnabled = s.ClipEnabled,
+        ClipY = s.ClipY,
+        // Background
+        BackgroundMode = (int)s.BackgroundMode,
+        BgTopR = s.BackgroundTopColor.X,
+        BgTopG = s.BackgroundTopColor.Y,
+        BgTopB = s.BackgroundTopColor.Z,
+        BgBottomR = s.BackgroundBottomColor.X,
+        BgBottomG = s.BackgroundBottomColor.Y,
+        BgBottomB = s.BackgroundBottomColor.Z,
+        // Bloom
+        BloomEnabled = s.BloomEnabled,
+        BloomThreshold = s.BloomThreshold,
+        BloomIntensity = s.BloomIntensity,
+        // Beveled cubes
+        UseBeveledCubes = s.UseBeveledCubes,
     };
 
     public static void ApplyRenderSettings(RenderSessionData data, RenderSettings target)
@@ -119,5 +172,23 @@ public static class SessionManager
         target.ShowWireframe = data.ShowWireframe;
         target.CellColor = new Vector3(data.CellColorR, data.CellColorG, data.CellColorB);
         target.EdgeColor = new Vector3(data.EdgeColorR, data.EdgeColorG, data.EdgeColorB);
+        // Fog
+        target.FogEnabled = data.FogEnabled;
+        target.FogStart = data.FogStart;
+        target.FogEnd = data.FogEnd;
+        target.FogColor = new Vector3(data.FogColorR, data.FogColorG, data.FogColorB);
+        // Clip
+        target.ClipEnabled = data.ClipEnabled;
+        target.ClipY = data.ClipY;
+        // Background
+        target.BackgroundMode = (BackgroundMode)data.BackgroundMode;
+        target.BackgroundTopColor = new Vector3(data.BgTopR, data.BgTopG, data.BgTopB);
+        target.BackgroundBottomColor = new Vector3(data.BgBottomR, data.BgBottomG, data.BgBottomB);
+        // Bloom
+        target.BloomEnabled = data.BloomEnabled;
+        target.BloomThreshold = data.BloomThreshold;
+        target.BloomIntensity = data.BloomIntensity;
+        // Beveled cubes
+        target.UseBeveledCubes = data.UseBeveledCubes;
     }
 }

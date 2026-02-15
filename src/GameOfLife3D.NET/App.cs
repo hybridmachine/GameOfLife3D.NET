@@ -1,5 +1,7 @@
 using GameOfLife3D.NET.Camera;
+using GameOfLife3D.NET.Editing;
 using GameOfLife3D.NET.Engine;
+using GameOfLife3D.NET.IO;
 using GameOfLife3D.NET.Rendering;
 using GameOfLife3D.NET.UI;
 using ImGuiNET;
@@ -8,6 +10,7 @@ using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.ImGui;
 using Silk.NET.Windowing;
+using System.Numerics;
 
 namespace GameOfLife3D.NET;
 
@@ -23,10 +26,20 @@ public sealed class App : IDisposable
     private Renderer3D? _renderer;
     private CameraController? _camera;
     private ImGuiUI? _ui;
+    private EditingController? _editController;
+    private GridRayCaster? _rayCaster;
 
     private float _dpiScale = 1.0f;
     private double _startTime;
     private bool _spaceWasDown;
+    private bool _f12WasDown;
+
+    // Key edge detection for edit mode
+    private bool _eWasDown;
+    private bool _leftBracketWasDown;
+    private bool _rightBracketWasDown;
+    private bool _rWasDown;
+    private bool _escWasDown;
 
     public void Run()
     {
@@ -122,14 +135,32 @@ public sealed class App : IDisposable
         _renderer.Initialize();
         _renderer.SetGridSize(_engine.GridSize);
 
+        // Initialize post-process pipeline
+        var fbSize = _window.FramebufferSize;
+        _renderer.InitializePostProcess(fbSize.X, fbSize.Y);
+
         // Initialize camera
         _camera = new CameraController();
         _camera.Initialize(_input);
         _camera.AspectRatio = (float)_window!.Size.X / _window.Size.Y;
 
+        // Initialize editing
+        _rayCaster = new GridRayCaster();
+        _editController = new EditingController(_engine, _renderer, _rayCaster);
+
         // Initialize UI
-        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _dpiScale);
+        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _editController, _dpiScale);
         _ui.SyncDisplayRange();
+        _ui.OnScreenshotRequested = TakeScreenshot;
+        _ui.OnExportSTL = path => ExportModel(path, "stl");
+        _ui.OnExportOBJ = path => ExportModel(path, "obj");
+
+        // Wire mouse clicks for editing
+        foreach (var mouse in _input.Mice)
+        {
+            mouse.MouseDown += OnMouseDownForEditing;
+            mouse.MouseMove += OnMouseMoveForEditing;
+        }
 
         // OpenGL setup
         _gl.ClearColor(0.05f, 0.05f, 0.08f, 1.0f);
@@ -137,6 +168,38 @@ public sealed class App : IDisposable
         _gl.Enable(EnableCap.CullFace);
 
         _startTime = _window.Time;
+    }
+
+    private void OnMouseDownForEditing(IMouse mouse, MouseButton button)
+    {
+        if (_editController == null || _camera == null || !_editController.IsActive) return;
+
+        var io = ImGui.GetIO();
+        if (io.WantCaptureMouse) return;
+
+        if (button == MouseButton.Left)
+        {
+            var pos = mouse.Position;
+            _editController.HandleClick(
+                pos.X, pos.Y,
+                _camera.ViewMatrix, _camera.ProjectionMatrix,
+                _window!.Size.X, _window.Size.Y,
+                _engine!.GridSize);
+        }
+    }
+
+    private void OnMouseMoveForEditing(IMouse mouse, Vector2 position)
+    {
+        if (_editController == null || _camera == null || !_editController.IsActive) return;
+
+        var io = ImGui.GetIO();
+        if (io.WantCaptureMouse) return;
+
+        _editController.HandleMouseMove(
+            position.X, position.Y,
+            _camera.ViewMatrix, _camera.ProjectionMatrix,
+            _window!.Size.X, _window.Size.Y,
+            _engine!.GridSize);
     }
 
     private void OnRender(double deltaTime)
@@ -153,25 +216,20 @@ public sealed class App : IDisposable
         var io = ImGui.GetIO();
         _camera.SetImGuiCapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
 
-        // Handle Space key for play/pause with edge detection
+        // Handle keyboard shortcuts
         if (!io.WantCaptureKeyboard)
         {
-            bool spaceDown = false;
-            foreach (var keyboard in _input!.Keyboards)
-            {
-                if (keyboard.IsKeyPressed(Key.Space))
-                    spaceDown = true;
-            }
-
-            if (spaceDown && !_spaceWasDown)
-            {
-                _ui.TogglePlayPause();
-            }
-            _spaceWasDown = spaceDown;
+            HandleKeyboardShortcuts();
         }
         else
         {
             _spaceWasDown = false;
+            _f12WasDown = false;
+            _eWasDown = false;
+            _leftBracketWasDown = false;
+            _rightBracketWasDown = false;
+            _rWasDown = false;
+            _escWasDown = false;
         }
 
         // Update systems
@@ -179,17 +237,10 @@ public sealed class App : IDisposable
         _ui.Tick(currentTime);
         _ui.StatusBar.UpdateFPS(currentTime);
 
-        // Update animation speed from timeline
-        float speed = _ui.Timeline.SpeedMultiplier;
-        // Speed multiplier: higher = faster, base is 200ms
-        // Already handled in Tick via timeline
-
         // Update renderer with current generations
         _renderer.UpdateGenerations(_engine.Generations, _ui.DisplayStart, _ui.DisplayEnd);
 
-        // Clear and render
-        _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
+        // Render
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix;
         var fbSize = _window.FramebufferSize;
@@ -201,11 +252,121 @@ public sealed class App : IDisposable
         _imGuiController.Render();
     }
 
+    private void HandleKeyboardShortcuts()
+    {
+        bool spaceDown = false;
+        bool f12Down = false;
+        bool eDown = false;
+        bool leftBracketDown = false;
+        bool rightBracketDown = false;
+        bool rDown = false;
+        bool escDown = false;
+
+        foreach (var keyboard in _input!.Keyboards)
+        {
+            if (keyboard.IsKeyPressed(Key.Space)) spaceDown = true;
+            if (keyboard.IsKeyPressed(Key.F12)) f12Down = true;
+            if (keyboard.IsKeyPressed(Key.E)) eDown = true;
+            if (keyboard.IsKeyPressed(Key.LeftBracket)) leftBracketDown = true;
+            if (keyboard.IsKeyPressed(Key.RightBracket)) rightBracketDown = true;
+            if (keyboard.IsKeyPressed(Key.R)) rDown = true;
+            if (keyboard.IsKeyPressed(Key.Escape)) escDown = true;
+        }
+
+        // Space: play/pause
+        if (spaceDown && !_spaceWasDown)
+            _ui!.TogglePlayPause();
+        _spaceWasDown = spaceDown;
+
+        // F12: screenshot
+        if (f12Down && !_f12WasDown)
+            TakeScreenshot();
+        _f12WasDown = f12Down;
+
+        // E: toggle edit mode
+        if (eDown && !_eWasDown && _editController != null)
+        {
+            if (_editController.IsActive)
+                _editController.Deactivate();
+            else
+                _editController.TryActivate(_ui!.IsPlaying, _ui!.DisplayStart);
+        }
+        _eWasDown = eDown;
+
+        // [/]: brush size
+        if (leftBracketDown && !_leftBracketWasDown && _editController is { IsActive: true })
+            _editController.BrushSize = Math.Max(1, _editController.BrushSize - 1);
+        _leftBracketWasDown = leftBracketDown;
+
+        if (rightBracketDown && !_rightBracketWasDown && _editController is { IsActive: true })
+            _editController.BrushSize = Math.Min(10, _editController.BrushSize + 1);
+        _rightBracketWasDown = rightBracketDown;
+
+        // R: rotate pattern
+        if (rDown && !_rWasDown && _editController is { IsActive: true })
+            _editController.RotatePattern();
+        _rWasDown = rDown;
+
+        // Escape: exit edit mode
+        if (escDown && !_escWasDown && _editController is { IsActive: true })
+            _editController.Deactivate();
+        _escWasDown = escDown;
+    }
+
+    private void ExportModel(string path, string format)
+    {
+        if (_engine == null || _ui == null) return;
+
+        try
+        {
+            int cellCount = _renderer!.GetVisibleCellCount();
+            long estimatedSize = ModelExporter.EstimateSTLSize(cellCount);
+
+            if (estimatedSize > 100_000_000)
+                Console.WriteLine($"Warning: Export will be ~{estimatedSize / 1_000_000}MB");
+
+            if (format == "stl")
+            {
+                ModelExporter.ExportBinarySTL(path, _engine.Generations,
+                    _ui.DisplayStart, _ui.DisplayEnd, _engine.GridSize, _renderer.Settings.CellPadding);
+            }
+            else
+            {
+                ModelExporter.ExportOBJ(path, _engine.Generations,
+                    _ui.DisplayStart, _ui.DisplayEnd, _engine.GridSize, _renderer.Settings.CellPadding);
+            }
+
+            Console.WriteLine($"Exported to: {path}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Export failed: {ex.Message}");
+        }
+    }
+
+    public void TakeScreenshot()
+    {
+        if (_renderer?.PostProcess == null) return;
+
+        try
+        {
+            var pixels = _renderer.PostProcess.ReadPixels();
+            string path = ScreenshotCapture.SaveToDesktop(pixels, _renderer.PostProcess.Width, _renderer.PostProcess.Height);
+            Console.WriteLine($"Screenshot saved: {path}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Screenshot failed: {ex.Message}");
+        }
+    }
+
     private void OnResize(Vector2D<int> size)
     {
         _gl?.Viewport(size);
         if (_camera != null && size.X > 0 && size.Y > 0)
             _camera.AspectRatio = (float)size.X / size.Y;
+        if (_renderer != null && size.X > 0 && size.Y > 0)
+            _renderer.ResizePostProcess(size.X, size.Y);
     }
 
     private void OnClosing()
@@ -221,6 +382,10 @@ public sealed class App : IDisposable
         // Prefer fonts with good Unicode symbol coverage
         string[] candidates =
         [
+            // macOS
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/System/Library/Fonts/SFNS.ttf",
+            "/Library/Fonts/Arial Unicode.ttf",
             // Linux
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",

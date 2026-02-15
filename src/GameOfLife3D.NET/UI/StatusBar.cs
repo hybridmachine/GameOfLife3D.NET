@@ -28,6 +28,8 @@ public sealed class StatusBar
         }
     }
 
+    public bool ShowEditBadge { get; set; }
+
     public void Render(int displayStart, int displayEnd, string ruleString, int cellCount, int windowWidth, int windowHeight)
     {
         float s = _dpiScale;
@@ -67,7 +69,14 @@ public sealed class StatusBar
         uint fpsColor = _fps >= 55 ? Theme.TextPrimaryU32
             : _fps >= 30 ? ImGui.ColorConvertFloat4ToU32(Theme.StatusYellow)
             : ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.3f, 0.3f, 1f));
-        DrawSegment(drawList, x, textY, "FPS", _fps.ToString(), s, fpsColor);
+        x = DrawSegment(drawList, x, textY, "FPS", _fps.ToString(), s, fpsColor);
+
+        // Edit badge
+        if (ShowEditBadge)
+        {
+            x = DrawDivider(drawList, x, textY, s);
+            drawList.AddText(new Vector2(x, textY), Theme.AccentU32, "EDIT");
+        }
     }
 
     private static float DrawSegment(ImDrawListPtr drawList, float x, float y, string label, string value, float s, uint valueColor = 0)

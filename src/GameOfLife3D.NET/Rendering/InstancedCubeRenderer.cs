@@ -15,6 +15,7 @@ public sealed class InstancedCubeRenderer : IDisposable
 {
     private readonly GL _gl;
     private CubeMesh? _cubeMesh;
+    private BeveledCubeMesh? _beveledMesh;
     private uint _instanceVbo;
     private int _maxInstances;
     private int _instanceCount;
@@ -22,6 +23,9 @@ public sealed class InstancedCubeRenderer : IDisposable
 
     // Pre-allocated buffer
     private InstanceData[] _instanceBuffer = [];
+
+    // Performance guard: disable beveled cubes above this threshold
+    private const int BeveledMaxInstances = 500_000;
 
     public int InstanceCount => _instanceCount;
 
@@ -36,11 +40,11 @@ public sealed class InstancedCubeRenderer : IDisposable
         _instanceBuffer = new InstanceData[maxInstances];
 
         _cubeMesh = new CubeMesh(_gl);
+        _beveledMesh = new BeveledCubeMesh(_gl);
+
         _instanceVbo = _gl.GenBuffer();
 
-        // Bind instance VBO to cube VAO
-        _gl.BindVertexArray(_cubeMesh.Vao);
-
+        // Allocate instance VBO
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVbo);
         unsafe
         {
@@ -49,16 +53,26 @@ public sealed class InstancedCubeRenderer : IDisposable
                 null, BufferUsageARB.DynamicDraw);
         }
 
+        // Bind instance attributes to both VAOs
+        BindInstanceAttributesToVAO(_cubeMesh.Vao);
+        BindInstanceAttributesToVAO(_beveledMesh.Vao);
+    }
+
+    private unsafe void BindInstanceAttributesToVAO(uint vao)
+    {
+        _gl.BindVertexArray(vao);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVbo);
+
         uint stride = (uint)Marshal.SizeOf<InstanceData>();
 
         // Instance Position: location 2
         _gl.EnableVertexAttribArray(2);
-        unsafe { _gl.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, stride, (void*)0); }
+        _gl.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, stride, (void*)0);
         _gl.VertexAttribDivisor(2, 1);
 
         // Instance GenerationT: location 3
         _gl.EnableVertexAttribArray(3);
-        unsafe { _gl.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float))); }
+        _gl.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float)));
         _gl.VertexAttribDivisor(3, 1);
 
         _gl.BindVertexArray(0);
@@ -87,6 +101,21 @@ public sealed class InstancedCubeRenderer : IDisposable
         _dirty = false;
     }
 
+    private void GetActiveMesh(RenderSettings settings, out uint vao, out uint indexCount)
+    {
+        bool useBeveled = settings.UseBeveledCubes && _instanceCount <= BeveledMaxInstances && _beveledMesh != null;
+        if (useBeveled)
+        {
+            vao = _beveledMesh!.Vao;
+            indexCount = _beveledMesh.IndexCount;
+        }
+        else
+        {
+            vao = _cubeMesh!.Vao;
+            indexCount = _cubeMesh.IndexCount;
+        }
+    }
+
     public void RenderSolid(ShaderProgram shader, Matrix4x4 view, Matrix4x4 proj, float time, RenderSettings settings)
     {
         if (_instanceCount == 0 || _cubeMesh == null) return;
@@ -101,10 +130,21 @@ public sealed class InstancedCubeRenderer : IDisposable
         shader.SetUniform("uTime", time);
         shader.SetUniform("uLightDir", Vector3.Normalize(new Vector3(1f, 1f, 0.5f)));
 
-        _gl.BindVertexArray(_cubeMesh.Vao);
+        // Fog
+        shader.SetUniform("uFogEnabled", settings.FogEnabled);
+        shader.SetUniform("uFogStart", settings.FogStart);
+        shader.SetUniform("uFogEnd", settings.FogEnd);
+        shader.SetUniform("uFogColor", settings.FogColor);
+
+        // Clip plane
+        shader.SetUniform("uClipEnabled", settings.ClipEnabled);
+        shader.SetUniform("uClipY", settings.ClipY);
+
+        GetActiveMesh(settings, out uint vao, out uint indexCount);
+        _gl.BindVertexArray(vao);
         unsafe
         {
-            _gl.DrawElementsInstanced(PrimitiveType.Triangles, _cubeMesh.IndexCount,
+            _gl.DrawElementsInstanced(PrimitiveType.Triangles, indexCount,
                 DrawElementsType.UnsignedInt, null, (uint)_instanceCount);
         }
         _gl.BindVertexArray(0);
@@ -124,14 +164,25 @@ public sealed class InstancedCubeRenderer : IDisposable
         shader.SetUniform("uTime", time);
         shader.SetUniform("uHueAngle", settings.EdgeColorAngle);
 
+        // Fog
+        shader.SetUniform("uFogEnabled", settings.FogEnabled);
+        shader.SetUniform("uFogStart", settings.FogStart);
+        shader.SetUniform("uFogEnd", settings.FogEnd);
+        shader.SetUniform("uFogColor", settings.FogColor);
+
+        // Clip plane
+        shader.SetUniform("uClipEnabled", settings.ClipEnabled);
+        shader.SetUniform("uClipY", settings.ClipY);
+
         _gl.Enable(EnableCap.PolygonOffsetLine);
         _gl.PolygonOffset(-1f, -1f);
         _gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line);
 
-        _gl.BindVertexArray(_cubeMesh.Vao);
+        GetActiveMesh(settings, out uint vao, out uint indexCount);
+        _gl.BindVertexArray(vao);
         unsafe
         {
-            _gl.DrawElementsInstanced(PrimitiveType.Triangles, _cubeMesh.IndexCount,
+            _gl.DrawElementsInstanced(PrimitiveType.Triangles, indexCount,
                 DrawElementsType.UnsignedInt, null, (uint)_instanceCount);
         }
         _gl.BindVertexArray(0);
@@ -143,6 +194,7 @@ public sealed class InstancedCubeRenderer : IDisposable
     public void Dispose()
     {
         _cubeMesh?.Dispose();
+        _beveledMesh?.Dispose();
         if (_instanceVbo != 0)
             _gl.DeleteBuffer(_instanceVbo);
     }

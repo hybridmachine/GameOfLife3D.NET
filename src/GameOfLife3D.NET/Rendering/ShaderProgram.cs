@@ -112,6 +112,12 @@ public sealed class ShaderProgram : IDisposable
         return loc;
     }
 
+    public void SetUniform(string name, int value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc >= 0) _gl.Uniform1(loc, value);
+    }
+
     public void SetUniform(string name, float value)
     {
         int loc = GetUniformLocation(name);

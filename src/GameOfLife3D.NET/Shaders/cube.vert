@@ -12,6 +12,7 @@ uniform float uCellSize;
 out vec3 vWorldPosition;
 out vec3 vNormal;
 out float vGenerationT;
+out float vViewDistance;
 
 void main()
 {
@@ -19,5 +20,8 @@ void main()
     vWorldPosition = worldPos;
     vNormal = aNormal;
     vGenerationT = aGenerationT;
-    gl_Position = uProjection * uView * vec4(worldPos, 1.0);
+
+    vec4 viewPos = uView * vec4(worldPos, 1.0);
+    vViewDistance = length(viewPos.xyz);
+    gl_Position = uProjection * viewPos;
 }

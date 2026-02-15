@@ -13,4 +13,34 @@ public sealed class RenderSettings
     public bool EdgeColorCycling { get; set; } = true;
     public float EdgeColorAngle { get; set; } = 180f;
     public bool ShowWireframe { get; set; } = true;
+
+    // Fog
+    public bool FogEnabled { get; set; }
+    public float FogStart { get; set; } = 20f;
+    public float FogEnd { get; set; } = 100f;
+    public Vector3 FogColor { get; set; } = new(0.05f, 0.05f, 0.08f);
+
+    // Clip plane
+    public bool ClipEnabled { get; set; }
+    public float ClipY { get; set; } = 25f;
+
+    // Background
+    public BackgroundMode BackgroundMode { get; set; } = BackgroundMode.Solid;
+    public Vector3 BackgroundTopColor { get; set; } = new(0.08f, 0.08f, 0.15f);
+    public Vector3 BackgroundBottomColor { get; set; } = new(0.02f, 0.02f, 0.04f);
+
+    // Bloom
+    public bool BloomEnabled { get; set; }
+    public float BloomThreshold { get; set; } = 0.6f;
+    public float BloomIntensity { get; set; } = 0.5f;
+
+    // Beveled cubes
+    public bool UseBeveledCubes { get; set; }
+}
+
+public enum BackgroundMode
+{
+    Solid,
+    Gradient,
+    Starfield,
 }

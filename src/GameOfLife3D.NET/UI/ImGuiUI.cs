@@ -1,5 +1,6 @@
 using System.Numerics;
 using GameOfLife3D.NET.Camera;
+using GameOfLife3D.NET.Editing;
 using GameOfLife3D.NET.Engine;
 using GameOfLife3D.NET.IO;
 using GameOfLife3D.NET.Rendering;
@@ -13,6 +14,7 @@ public sealed class ImGuiUI
     private readonly Renderer3D _renderer;
     private readonly CameraController _camera;
     private readonly PatternLoader _patternLoader;
+    private readonly EditingController? _editController;
     private readonly TimelineBar _timeline;
     private readonly StatusBar _statusBar;
     private readonly float _dpiScale;
@@ -34,6 +36,33 @@ public sealed class ImGuiUI
     private bool _showWireframe;
     private bool _toroidal;
     private float _randomDensity = 0.3f;
+
+    // Fog
+    private bool _fogEnabled;
+    private float _fogStart = 20f;
+    private float _fogEnd = 100f;
+    private Vector3 _fogColor = new(0.05f, 0.05f, 0.08f);
+
+    // Clip
+    private bool _clipEnabled;
+    private float _clipY = 25f;
+
+    // Background
+    private int _backgroundMode;
+    private Vector3 _bgTopColor = new(0.08f, 0.08f, 0.15f);
+    private Vector3 _bgBottomColor = new(0.02f, 0.02f, 0.04f);
+
+    // Bloom
+    private bool _bloomEnabled;
+    private float _bloomThreshold = 0.6f;
+    private float _bloomIntensity = 0.5f;
+
+    // Beveled cubes
+    private bool _useBeveledCubes;
+
+    // Population stats
+    private float[] _populationData = [];
+    private int _lastPopulationGenCount;
 
     // Display state
     private int _displayStart;
@@ -71,12 +100,20 @@ public sealed class ImGuiUI
     public int DisplayEnd => _displayEnd;
     public bool IsPlaying => _isPlaying;
 
-    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, float dpiScale = 1.0f)
+    // Screenshot callback
+    public Action? OnScreenshotRequested { get; set; }
+
+    // Export callbacks
+    public Action<string>? OnExportSTL { get; set; }
+    public Action<string>? OnExportOBJ { get; set; }
+
+    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, EditingController? editController = null, float dpiScale = 1.0f)
     {
         _engine = engine;
         _renderer = renderer;
         _camera = camera;
         _patternLoader = patternLoader;
+        _editController = editController;
         _dpiScale = dpiScale;
         _timeline = new TimelineBar(dpiScale);
         _statusBar = new StatusBar(dpiScale);
@@ -165,6 +202,7 @@ public sealed class ImGuiUI
     {
         RenderControlPanel();
         _timeline.Render(windowWidth, windowHeight);
+        _statusBar.ShowEditBadge = _editController?.IsActive ?? false;
         _statusBar.Render(_displayStart, _displayEnd, _engine.RuleString,
             _renderer.GetVisibleCellCount(), windowWidth, windowHeight);
     }
@@ -180,9 +218,13 @@ public sealed class ImGuiUI
         {
             RenderSimulationSection();
             ImGui.Spacing();
+            RenderStatsSection();
+            ImGui.Spacing();
             RenderPatternSection();
             ImGui.Spacing();
             RenderVisualSection();
+            ImGui.Spacing();
+            RenderEditingSection();
             ImGui.Spacing();
             RenderFileSection();
             ImGui.Spacing();
@@ -283,6 +325,47 @@ public sealed class ImGuiUI
         }
     }
 
+    private void RenderStatsSection()
+    {
+        if (UIHelpers.SectionHeader("\u2261", "Statistics", defaultOpen: false))
+        {
+            // Rebuild population array if generation count changed
+            if (_engine.GenerationCount != _lastPopulationGenCount)
+            {
+                _populationData = new float[_engine.GenerationCount];
+                for (int i = 0; i < _engine.GenerationCount; i++)
+                {
+                    var gen = _engine.GetGeneration(i);
+                    _populationData[i] = gen?.LiveCells.Count ?? 0;
+                }
+                _lastPopulationGenCount = _engine.GenerationCount;
+            }
+
+            if (_populationData.Length > 0)
+            {
+                float current = _populationData.Length > 0 ? _populationData[^1] : 0;
+                float min = _populationData.Min();
+                float max = _populationData.Max();
+                float avg = _populationData.Average();
+
+                UIHelpers.LabelValue("Current:", ((int)current).ToString());
+                UIHelpers.LabelValue("Min / Max:", $"{(int)min} / {(int)max}");
+                UIHelpers.LabelValue("Average:", $"{avg:F0}");
+
+                float fullWidth = ImGui.GetContentRegionAvail().X;
+                ImGui.PlotLines("##pop", ref _populationData[0], _populationData.Length,
+                    0, $"Population ({_populationData.Length} gens)",
+                    min * 0.9f, max * 1.1f, new Vector2(fullWidth, 60 * _dpiScale));
+            }
+            else
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+                ImGui.Text("No generations computed.");
+                ImGui.PopStyleColor();
+            }
+        }
+    }
+
     private void RenderPatternSection()
     {
         if (UIHelpers.SectionHeader("\u25A6", "Patterns"))
@@ -346,6 +429,9 @@ public sealed class ImGuiUI
             if (ImGui.Checkbox("Generation Labels", ref _showGenerationLabels))
                 settings.ShowGenerationLabels = _showGenerationLabels;
 
+            if (ImGui.Checkbox("Rounded Cubes", ref _useBeveledCubes))
+                settings.UseBeveledCubes = _useBeveledCubes;
+
             UIHelpers.ThinSeparator();
 
             // ── Colors ──
@@ -382,6 +468,157 @@ public sealed class ImGuiUI
                     if (ImGui.ColorEdit3("##edgecolor", ref _edgeColor))
                         settings.EdgeColor = _edgeColor;
                 }
+            }
+
+            UIHelpers.ThinSeparator();
+
+            // ── Fog ──
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Depth Fog");
+            ImGui.PopStyleColor();
+
+            if (ImGui.Checkbox("Enable Fog", ref _fogEnabled))
+                settings.FogEnabled = _fogEnabled;
+            UIHelpers.Tooltip("Fade distant cubes to the background color for better depth perception");
+
+            if (_fogEnabled)
+            {
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.SliderFloat("##fogstart", ref _fogStart, 1f, 200f, "Start: %.0f"))
+                    settings.FogStart = _fogStart;
+
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.SliderFloat("##fogend", ref _fogEnd, 10f, 500f, "End: %.0f"))
+                    settings.FogEnd = _fogEnd;
+
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.ColorEdit3("##fogcolor", ref _fogColor))
+                    settings.FogColor = _fogColor;
+            }
+
+            UIHelpers.ThinSeparator();
+
+            // ── Cross-Section ──
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Cross-Section");
+            ImGui.PopStyleColor();
+
+            if (ImGui.Checkbox("Enable Clip Plane", ref _clipEnabled))
+                settings.ClipEnabled = _clipEnabled;
+            UIHelpers.Tooltip("Clip cells above a Y threshold to see inside dense structures");
+
+            if (_clipEnabled)
+            {
+                float maxY = Math.Max(_engine.GenerationCount, 1);
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.SliderFloat("##clipy", ref _clipY, 0f, maxY, "Clip Y: %.0f"))
+                    settings.ClipY = _clipY;
+            }
+
+            UIHelpers.ThinSeparator();
+
+            // ── Background ──
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Background");
+            ImGui.PopStyleColor();
+
+            string[] bgModes = ["Solid", "Gradient", "Starfield"];
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.Combo("##bgmode", ref _backgroundMode, bgModes, bgModes.Length))
+                settings.BackgroundMode = (BackgroundMode)_backgroundMode;
+
+            if (_backgroundMode > 0)
+            {
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.ColorEdit3("##bgtop", ref _bgTopColor))
+                    settings.BackgroundTopColor = _bgTopColor;
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.ColorEdit3("##bgbottom", ref _bgBottomColor))
+                    settings.BackgroundBottomColor = _bgBottomColor;
+            }
+
+            UIHelpers.ThinSeparator();
+
+            // ── Bloom ──
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Bloom");
+            ImGui.PopStyleColor();
+
+            if (ImGui.Checkbox("Enable Bloom", ref _bloomEnabled))
+                settings.BloomEnabled = _bloomEnabled;
+            UIHelpers.Tooltip("Makes bright color-cycling areas glow");
+
+            if (_bloomEnabled)
+            {
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.SliderFloat("##bloomthresh", ref _bloomThreshold, 0.1f, 1.5f, "Threshold: %.2f"))
+                    settings.BloomThreshold = _bloomThreshold;
+
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.SliderFloat("##bloomintensity", ref _bloomIntensity, 0.1f, 2.0f, "Intensity: %.2f"))
+                    settings.BloomIntensity = _bloomIntensity;
+            }
+        }
+    }
+
+    private void RenderEditingSection()
+    {
+        if (_editController == null) return;
+
+        if (UIHelpers.SectionHeader("\u270E", "Editing", defaultOpen: false))
+        {
+            float fullWidth = ImGui.GetContentRegionAvail().X;
+
+            bool isActive = _editController.IsActive;
+            if (isActive)
+            {
+                if (ImGui.Button("Exit Edit Mode", new Vector2(fullWidth, 0)))
+                    _editController.Deactivate();
+            }
+            else
+            {
+                bool canEdit = !_isPlaying && _displayStart == 0;
+                if (!canEdit) ImGui.BeginDisabled();
+                if (UIHelpers.AccentButton("Enter Edit Mode", new Vector2(fullWidth, 0)))
+                    _editController.TryActivate(_isPlaying, _displayStart);
+                if (!canEdit)
+                {
+                    ImGui.EndDisabled();
+                    ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+                    ImGui.Text("Pause & view gen 0 to edit");
+                    ImGui.PopStyleColor();
+                }
+            }
+
+            if (isActive)
+            {
+                UIHelpers.ThinSeparator();
+
+                // Tool selector
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+                ImGui.Text("Tool");
+                ImGui.PopStyleColor();
+
+                string[] tools = ["Toggle", "Draw", "Erase"];
+                int currentTool = (int)_editController.CurrentTool;
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.Combo("##edittool", ref currentTool, tools, tools.Length))
+                    _editController.CurrentTool = (EditTool)currentTool;
+
+                // Brush size
+                int brushSize = _editController.BrushSize;
+                ImGui.SetNextItemWidth(fullWidth);
+                if (ImGui.SliderInt("##brushsize", ref brushSize, 1, 10, "Brush: %d"))
+                    _editController.BrushSize = brushSize;
+
+                // Rotation
+                if (ImGui.Button($"Rotate ({_editController.PatternRotation}\u00B0)", new Vector2(fullWidth, 0)))
+                    _editController.RotatePattern();
+
+                UIHelpers.ThinSeparator();
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+                ImGui.Text("E=Toggle  [/]=Size  R=Rotate");
+                ImGui.PopStyleColor();
             }
         }
     }
@@ -468,6 +705,37 @@ public sealed class ImGuiUI
                 }
             }
             UIHelpers.Tooltip("Save current session to a JSON file");
+
+            UIHelpers.ThinSeparator();
+
+            // Screenshot
+            if (ImGui.Button("Screenshot (F12)", new Vector2(fullWidth, 0)))
+                OnScreenshotRequested?.Invoke();
+            UIHelpers.Tooltip("Save the current view as a PNG to your Desktop");
+
+            UIHelpers.ThinSeparator();
+
+            // Export
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("3D Export");
+            ImGui.PopStyleColor();
+
+            if (ImGui.Button("Export STL", new Vector2(btnWidth, 0)))
+            {
+                var path = FileDialogHelper.SaveFile("stl");
+                if (path != null)
+                    OnExportSTL?.Invoke(path);
+            }
+            UIHelpers.Tooltip("Export visible cubes as binary STL for 3D printing");
+
+            ImGui.SameLine();
+            if (ImGui.Button("Export OBJ", new Vector2(btnWidth, 0)))
+            {
+                var path = FileDialogHelper.SaveFile("obj");
+                if (path != null)
+                    OnExportOBJ?.Invoke(path);
+            }
+            UIHelpers.Tooltip("Export visible cubes as OBJ for Blender/etc.");
         }
     }
 
@@ -494,6 +762,10 @@ public sealed class ImGuiUI
             UIHelpers.LabelValue("  WASD", "Move");
             UIHelpers.LabelValue("  QE", "Rotate");
             UIHelpers.LabelValue("  RF", "Up / Down");
+            UIHelpers.LabelValue("  Space", "Play / Pause");
+            UIHelpers.LabelValue("  F12", "Screenshot");
+            UIHelpers.LabelValue("  E", "Toggle Edit");
+            UIHelpers.LabelValue("  Esc", "Exit Edit");
             UIHelpers.EndGroup();
         }
     }
@@ -527,5 +799,18 @@ public sealed class ImGuiUI
         _showGridLines = s.ShowGridLines;
         _showGenerationLabels = s.ShowGenerationLabels;
         _showWireframe = s.ShowWireframe;
+        _fogEnabled = s.FogEnabled;
+        _fogStart = s.FogStart;
+        _fogEnd = s.FogEnd;
+        _fogColor = s.FogColor;
+        _clipEnabled = s.ClipEnabled;
+        _clipY = s.ClipY;
+        _backgroundMode = (int)s.BackgroundMode;
+        _bgTopColor = s.BackgroundTopColor;
+        _bgBottomColor = s.BackgroundBottomColor;
+        _bloomEnabled = s.BloomEnabled;
+        _bloomThreshold = s.BloomThreshold;
+        _bloomIntensity = s.BloomIntensity;
+        _useBeveledCubes = s.UseBeveledCubes;
     }
 }
