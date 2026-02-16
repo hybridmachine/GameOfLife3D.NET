@@ -32,7 +32,6 @@ public static class UIHelpers
             var drawList = ImGui.GetWindowDrawList();
             var cursorScreen = ImGui.GetCursorScreenPos();
             float barWidth = 3f;
-            float regionHeight = 0; // will be drawn after content
             var barStart = new Vector2(cursorScreen.X - ImGui.GetStyle().WindowPadding.X + 2f, cursorScreen.Y);
 
             // Store bar start for EndSectionContent
