@@ -8,11 +8,11 @@ public sealed class RenderSettings
     public Vector3 CellColor { get; set; } = new(0f, 1f, 0.533f); // #00ff88
     public Vector3 EdgeColor { get; set; } = new(1f, 1f, 1f);
     public bool ShowGridLines { get; set; } = true;
-    public bool ShowGenerationLabels { get; set; } = true;
+    public bool ShowGenerationLabels { get; set; } = false;
     public bool FaceColorCycling { get; set; } = true;
     public bool EdgeColorCycling { get; set; } = true;
     public float EdgeColorAngle { get; set; } = 180f;
-    public bool ShowWireframe { get; set; } = true;
+    public bool ShowWireframe { get; set; } = false;
 
     // Fog
     public bool FogEnabled { get; set; }
@@ -25,7 +25,7 @@ public sealed class RenderSettings
     public float ClipY { get; set; } = 25f;
 
     // Background
-    public BackgroundMode BackgroundMode { get; set; } = BackgroundMode.Solid;
+    public BackgroundMode BackgroundMode { get; set; } = BackgroundMode.Starfield;
     public Vector3 BackgroundTopColor { get; set; } = new(0.08f, 0.08f, 0.15f);
     public Vector3 BackgroundBottomColor { get; set; } = new(0.02f, 0.02f, 0.04f);
 
