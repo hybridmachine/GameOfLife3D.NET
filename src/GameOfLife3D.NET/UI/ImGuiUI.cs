@@ -72,6 +72,14 @@ public sealed class ImGuiUI
     private float _animationSpeed = 200f;
     private double _lastAnimationTime;
 
+    // Control panel
+    private bool _isControlPanelOpen;
+    private float _controlPanelSlide;
+    private const float ControlPanelMargin = 10f;
+    private const float ControlPanelSlideSpeed = 8f;
+    private const float ControlPanelToggleSize = 34f;
+    private const float ControlPanelToggleGap = 25f;
+
     private static readonly string[] GridSizes = ["25", "50", "75", "100", "150", "200"];
     private static readonly int[] GridSizeValues = [25, 50, 75, 100, 150, 200];
     private static readonly string[] RuleNames;
@@ -198,23 +206,36 @@ public sealed class ImGuiUI
 
     public void Render(int windowWidth, int windowHeight)
     {
+        UpdateControlPanelAnimation();
         RenderControlPanel(windowWidth, windowHeight);
         _timeline.Render(windowWidth, windowHeight);
         _statusBar.ShowEditBadge = _editController?.IsActive ?? false;
         _statusBar.Render(_displayStart, _displayEnd, _engine.RuleString,
             _renderer.GetVisibleCellCount(), windowWidth, windowHeight);
+        RenderControlPanelToggle(windowWidth);
     }
 
     private void RenderControlPanel(int windowWidth, int windowHeight)
     {
+        if (!_isControlPanelOpen && _controlPanelSlide <= 0.001f)
+            return;
+
+        float panelY = ControlPanelMargin + ControlPanelToggleSize + ControlPanelToggleGap;
         float panelWidth = Math.Clamp(windowWidth * 0.22f, 260, 400);
-        float panelHeight = Math.Clamp(windowHeight * 0.7f, 300, windowHeight - 100f);
+        float maxPanelHeight = Math.Max(200f, windowHeight - panelY - 20f);
+        float minPanelHeight = Math.Min(300f, maxPanelHeight);
+        float panelHeight = Math.Clamp(windowHeight * 0.7f, minPanelHeight, maxPanelHeight);
+        float openX = windowWidth - panelWidth - ControlPanelMargin;
+        float closedX = windowWidth + 2f;
+        float panelX = closedX + (openX - closedX) * _controlPanelSlide;
 
-        ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(panelWidth, panelHeight), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSizeConstraints(new Vector2(260, 200), new Vector2(windowWidth * 0.35f, windowHeight - 100f));
+        ImGui.SetNextWindowPos(new Vector2(panelX, panelY), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new Vector2(panelWidth, panelHeight), ImGuiCond.Always);
+        ImGui.SetNextWindowSizeConstraints(
+            new Vector2(260, 200),
+            new Vector2(windowWidth * 0.35f, Math.Max(200f, windowHeight - panelY - 20f)));
 
-        if (ImGui.Begin("Game of Life 3D", ImGuiWindowFlags.NoCollapse))
+        if (ImGui.Begin("Game of Life 3D", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove))
         {
             RenderSimulationSection();
             ImGui.Spacing();
@@ -231,6 +252,75 @@ public sealed class ImGuiUI
             RenderCameraSection();
         }
         ImGui.End();
+    }
+
+    private void RenderControlPanelToggle(int windowWidth)
+    {
+        ImGui.SetNextWindowPos(
+            new Vector2(windowWidth - ControlPanelToggleSize - ControlPanelMargin, ControlPanelMargin),
+            ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new Vector2(ControlPanelToggleSize, ControlPanelToggleSize), ImGuiCond.Always);
+        ImGui.SetNextWindowBgAlpha(0f);
+
+        var flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings |
+            ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing;
+
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        if (ImGui.Begin("##ControlPanelToggle", flags))
+        {
+            Vector4 buttonColor = _isControlPanelOpen ? Theme.AccentMuted : Theme.BgSurface;
+            ImGui.PushStyleColor(ImGuiCol.Button, buttonColor);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Theme.FrameHover);
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, Theme.FrameActive);
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8f);
+
+            if (ImGui.Button("##control_panel_toggle_btn", new Vector2(ControlPanelToggleSize, ControlPanelToggleSize)))
+                _isControlPanelOpen = !_isControlPanelOpen;
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(_isControlPanelOpen ? "Hide controls" : "Show controls");
+
+            var drawList = ImGui.GetWindowDrawList();
+            var min = ImGui.GetItemRectMin();
+            var max = ImGui.GetItemRectMax();
+            var center = (min + max) * 0.5f;
+            float ringRadius = ControlPanelToggleSize * 0.22f;
+            float hubRadius = ringRadius * 0.45f;
+            float spokeInner = ringRadius * 1.05f;
+            float spokeOuter = ringRadius * 1.45f;
+            uint iconColor = ImGui.ColorConvertFloat4ToU32(Theme.TextPrimary);
+
+            for (int i = 0; i < 8; i++)
+            {
+                float angle = i * (MathF.PI / 4f);
+                var dir = new Vector2(MathF.Cos(angle), MathF.Sin(angle));
+                drawList.AddLine(
+                    center + dir * spokeInner,
+                    center + dir * spokeOuter,
+                    iconColor,
+                    2f);
+            }
+
+            drawList.AddCircle(center, ringRadius, iconColor, 24, 2f);
+            drawList.AddCircleFilled(center, hubRadius, iconColor, 20);
+
+            ImGui.PopStyleVar();
+            ImGui.PopStyleColor(3);
+        }
+        ImGui.End();
+        ImGui.PopStyleVar();
+    }
+
+    private void UpdateControlPanelAnimation()
+    {
+        float target = _isControlPanelOpen ? 1f : 0f;
+        float dt = MathF.Max(ImGui.GetIO().DeltaTime, 1f / 240f);
+        float step = ControlPanelSlideSpeed * dt;
+
+        if (_controlPanelSlide < target)
+            _controlPanelSlide = MathF.Min(target, _controlPanelSlide + step);
+        else if (_controlPanelSlide > target)
+            _controlPanelSlide = MathF.Max(target, _controlPanelSlide - step);
     }
 
     private void RenderSimulationSection()
