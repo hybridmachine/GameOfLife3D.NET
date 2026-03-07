@@ -21,12 +21,14 @@
     <PackageReference Include="Silk.NET" Version="2.23.0" />
     <PackageReference Include="Silk.NET.OpenGL.Extensions.ImGui" Version="2.23.0" />
     <PackageReference Include="NativeFileDialogSharp" Version="0.5.0" />
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Shaders\*.vert" />
     <EmbeddedResource Include="Shaders\*.frag" />
     <EmbeddedResource Include="Shaders\*.glsl" />
+    <EmbeddedResource Include="..\..\resources\2k_stars_milky_way.jpg" Link="Resources\2k_stars_milky_way.jpg" />
   </ItemGroup>
 
 </Project>

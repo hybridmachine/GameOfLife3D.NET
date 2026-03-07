@@ -154,7 +154,7 @@ public sealed class Renderer3D : IDisposable
         // Begin FBO scene if available
         if (useFBO)
         {
-            _postProcess!.BeginScene(_settings, currentTime);
+            _postProcess!.BeginScene(_settings, view, proj);
         }
         else
         {

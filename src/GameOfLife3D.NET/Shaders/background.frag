@@ -5,35 +5,43 @@ in vec2 vTexCoord;
 uniform vec3 uTopColor;
 uniform vec3 uBottomColor;
 uniform bool uStarfield;
-uniform float uTime;
+uniform sampler2D uSkyTexture;
+uniform mat4 uInvViewProj;
 
 out vec4 FragColor;
 
-// Pseudo-random hash
-float hash(vec2 p)
+const float PI = 3.14159265359;
+const float TAU = 6.28318530718;
+
+vec3 worldRay(vec2 uv)
 {
-    p = fract(p * vec2(443.8975, 397.2973));
-    p += dot(p, p.yx + 19.19);
-    return fract(p.x * p.y);
+    vec2 ndc = uv * 2.0 - 1.0;
+    vec4 nearPoint = uInvViewProj * vec4(ndc, 0.0, 1.0);
+    vec4 farPoint = uInvViewProj * vec4(ndc, 1.0, 1.0);
+    nearPoint.xyz /= max(nearPoint.w, 1e-5);
+    farPoint.xyz /= max(farPoint.w, 1e-5);
+    return normalize(farPoint.xyz - nearPoint.xyz);
+}
+
+vec2 directionToSky(vec3 dir)
+{
+    float lon = atan(dir.z, dir.x);
+    float lat = asin(clamp(dir.y, -1.0, 1.0));
+    return vec2(lon / TAU + 0.5, lat / PI + 0.5);
 }
 
 void main()
 {
-    vec3 color = mix(uBottomColor, uTopColor, vTexCoord.y);
-
-    if (uStarfield)
+    vec3 gradientColor = mix(uBottomColor, uTopColor, vTexCoord.y);
+    if (!uStarfield)
     {
-        // Create a starfield using the hash function
-        vec2 cell = floor(vTexCoord * 200.0);
-        float h = hash(cell);
-        if (h > 0.985)
-        {
-            float brightness = (h - 0.985) / 0.015;
-            // Twinkle based on time
-            float twinkle = 0.5 + 0.5 * sin(uTime * 2.0 + h * 100.0);
-            color += vec3(brightness * twinkle * 0.8);
-        }
+        FragColor = vec4(gradientColor, 1.0);
+        return;
     }
 
-    FragColor = vec4(color, 1.0);
+    vec3 rayDir = worldRay(vTexCoord);
+    vec2 skyUv = directionToSky(rayDir);
+    skyUv.y = 1.0 - skyUv.y;
+    vec3 skyColor = texture(uSkyTexture, skyUv).rgb;
+    FragColor = vec4(skyColor, 1.0);
 }

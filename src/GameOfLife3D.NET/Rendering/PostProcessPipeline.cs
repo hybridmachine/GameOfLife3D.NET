@@ -1,5 +1,5 @@
-using System.Numerics;
 using Silk.NET.OpenGL;
+using System.Numerics;
 
 namespace GameOfLife3D.NET.Rendering;
 
@@ -21,6 +21,7 @@ public sealed class PostProcessPipeline : IDisposable
     // Shaders
     private ShaderProgram? _compositeShader;
     private ShaderProgram? _backgroundShader;
+    private uint _skyTexture;
 
     public uint SceneColorTexture => _sceneColorTexture;
 
@@ -39,6 +40,20 @@ public sealed class PostProcessPipeline : IDisposable
 
         _compositeShader = ShaderProgram.FromEmbeddedResources(_gl, "postprocess.vert", "postprocess.frag");
         _backgroundShader = ShaderProgram.FromEmbeddedResources(_gl, "postprocess.vert", "background.frag");
+
+        try
+        {
+            _skyTexture = EmbeddedTextureLoader.LoadTexture2D(
+                _gl,
+                "2k_stars_milky_way.jpg",
+                TextureWrapMode.Repeat,
+                TextureWrapMode.ClampToEdge);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to load sky texture: {ex.Message}");
+            _skyTexture = 0;
+        }
     }
 
     private unsafe void CreateQuad()
@@ -120,16 +135,24 @@ public sealed class PostProcessPipeline : IDisposable
         CreateSceneFBO(width, height);
     }
 
-    public void BeginScene(RenderSettings settings, double currentTime)
+    public void BeginScene(
+        RenderSettings settings,
+        Matrix4x4 view,
+        Matrix4x4 projection)
     {
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _sceneFbo);
         _gl.Viewport(0, 0, (uint)_width, (uint)_height);
+
+        Matrix4x4 viewProjection = view * projection;
+        Matrix4x4 invViewProjection = Matrix4x4.Invert(viewProjection, out var inverted)
+            ? inverted
+            : Matrix4x4.Identity;
 
         if (settings.BackgroundMode != BackgroundMode.Solid)
         {
             // Draw background gradient (no depth write)
             _gl.Disable(EnableCap.DepthTest);
-            RenderBackground(settings, currentTime);
+            RenderBackground(settings, invViewProjection);
             _gl.Enable(EnableCap.DepthTest);
             // Clear only depth, keep background color
             _gl.Clear(ClearBufferMask.DepthBufferBit);
@@ -177,13 +200,19 @@ public sealed class PostProcessPipeline : IDisposable
         _gl.Enable(EnableCap.DepthTest);
     }
 
-    private void RenderBackground(RenderSettings settings, double currentTime)
+    private void RenderBackground(
+        RenderSettings settings,
+        Matrix4x4 invViewProjection)
     {
         _backgroundShader!.Use();
         _backgroundShader.SetUniform("uTopColor", settings.BackgroundTopColor);
         _backgroundShader.SetUniform("uBottomColor", settings.BackgroundBottomColor);
-        _backgroundShader.SetUniform("uStarfield", settings.BackgroundMode == BackgroundMode.Starfield);
-        _backgroundShader.SetUniform("uTime", (float)currentTime);
+        _backgroundShader.SetUniform("uStarfield", settings.BackgroundMode == BackgroundMode.Starfield && _skyTexture != 0);
+        _backgroundShader.SetUniform("uInvViewProj", invViewProjection);
+
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, _skyTexture);
+        _backgroundShader.SetUniform("uSkyTexture", 0);
         DrawQuad();
     }
 
@@ -229,6 +258,7 @@ public sealed class PostProcessPipeline : IDisposable
         DeleteFBOResources();
         if (_quadVao != 0) _gl.DeleteVertexArray(_quadVao);
         if (_quadVbo != 0) _gl.DeleteBuffer(_quadVbo);
+        if (_skyTexture != 0) _gl.DeleteTexture(_skyTexture);
         _compositeShader?.Dispose();
         _backgroundShader?.Dispose();
     }
