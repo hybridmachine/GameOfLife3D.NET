@@ -26,6 +26,7 @@ A 3D visualization of Conway's Game of Life built with .NET 10, Silk.NET, and Op
 | WASD | Move camera |
 | Q / E | Rotate camera |
 | R / F | Camera up / down |
+| 0 | Restart auto orbit |
 | Space | Play / Pause |
 
 ## Download

@@ -5,6 +5,9 @@ namespace GameOfLife3D.NET.Camera;
 
 public sealed class CameraController
 {
+    private const float AutoOrbitPeriodSeconds = 120f;
+    private const float AutoOrbitAngularSpeed = (2f * MathF.PI) / AutoOrbitPeriodSeconds;
+
     private Vector3 _target = new(0, 25, 0);
     private float _radius = 50f;
     private float _phi = MathF.PI / 3f;
@@ -13,7 +16,7 @@ public sealed class CameraController
     private float _panSpeed = 0.1f;
     private float _rotateSpeed = 0.01f;
     private float _moveSpeed = 0.5f;
-    private float _orbitSpeed = 0.02f;
+    private bool _autoOrbitEnabled = true;
 
     // Input state
     private readonly HashSet<Key> _keysDown = new();
@@ -62,35 +65,55 @@ public sealed class CameraController
         _imGuiWantsKeyboard = wantsKeyboard;
     }
 
+    public void StartAutoOrbit()
+    {
+        _autoOrbitEnabled = true;
+    }
+
+    public void StopAutoOrbit()
+    {
+        _autoOrbitEnabled = false;
+    }
+
     public void Update(float deltaTime)
     {
+        if (_autoOrbitEnabled)
+        {
+            OrbitAroundY(-AutoOrbitAngularSpeed * deltaTime);
+        }
+
         if (_imGuiWantsKeyboard) return;
 
         var forward = Vector3.Normalize(_target - _cameraPosition);
         var right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
         var up = Vector3.UnitY;
         var move = Vector3.Zero;
+        bool hasKeyboardCameraInput = false;
 
-        if (IsKeyDown(Key.W) || IsKeyDown(Key.Up)) move += forward;
-        if (IsKeyDown(Key.S) || IsKeyDown(Key.Down)) move -= forward;
-        if (IsKeyDown(Key.A) || IsKeyDown(Key.Left)) move -= right;
-        if (IsKeyDown(Key.D) || IsKeyDown(Key.Right)) move += right;
-        if (IsKeyDown(Key.R)) move += up;
-        if (IsKeyDown(Key.F)) move -= up;
+        if (IsKeyDown(Key.W) || IsKeyDown(Key.Up)) { move += forward; hasKeyboardCameraInput = true; }
+        if (IsKeyDown(Key.S) || IsKeyDown(Key.Down)) { move -= forward; hasKeyboardCameraInput = true; }
+        if (IsKeyDown(Key.A) || IsKeyDown(Key.Left)) { move -= right; hasKeyboardCameraInput = true; }
+        if (IsKeyDown(Key.D) || IsKeyDown(Key.Right)) { move += right; hasKeyboardCameraInput = true; }
+        if (IsKeyDown(Key.R)) { move += up; hasKeyboardCameraInput = true; }
+        if (IsKeyDown(Key.F)) { move -= up; hasKeyboardCameraInput = true; }
 
         if (IsKeyDown(Key.Q))
         {
+            hasKeyboardCameraInput = true;
             _theta -= _rotateSpeed * 2;
             UpdateCameraPosition();
         }
         if (IsKeyDown(Key.E))
         {
+            hasKeyboardCameraInput = true;
             _theta += _rotateSpeed * 2;
             UpdateCameraPosition();
         }
 
-        if (IsKeyDown(Key.O)) { OrbitAroundY(-_orbitSpeed); }
-        if (IsKeyDown(Key.P)) { OrbitAroundY(_orbitSpeed); }
+        if (hasKeyboardCameraInput)
+        {
+            StopAutoOrbit();
+        }
 
         if (move.LengthSquared() > 0)
         {
@@ -103,6 +126,10 @@ public sealed class CameraController
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
     {
         _keysDown.Add(key);
+        if (!_imGuiWantsKeyboard && IsCameraControlKey(key))
+        {
+            StopAutoOrbit();
+        }
     }
 
     private void OnKeyUp(IKeyboard keyboard, Key key, int scancode)
@@ -113,6 +140,12 @@ public sealed class CameraController
     private void OnMouseDown(IMouse mouse, MouseButton button)
     {
         if (_imGuiWantsMouse) return;
+
+        if (button is MouseButton.Left or MouseButton.Right or MouseButton.Middle)
+        {
+            StopAutoOrbit();
+        }
+
         _isDragging = true;
         _dragButton = (int)button;
         _lastMouse = new Vector2(mouse.Position.X, mouse.Position.Y);
@@ -152,12 +185,18 @@ public sealed class CameraController
     private void OnScroll(IMouse mouse, ScrollWheel scroll)
     {
         if (_imGuiWantsMouse) return;
+        StopAutoOrbit();
         float delta = scroll.Y > 0 ? 0.9f : 1.1f;
         _radius = Math.Clamp(_radius * delta, 1f, 1000f);
         UpdateCameraPosition();
     }
 
     private bool IsKeyDown(Key key) => _keysDown.Contains(key);
+
+    private static bool IsCameraControlKey(Key key) => key is
+        Key.W or Key.A or Key.S or Key.D or
+        Key.Up or Key.Down or Key.Left or Key.Right or
+        Key.Q or Key.E or Key.R or Key.F;
 
     private void ApplyPan(float rightAmount, float upAmount)
     {

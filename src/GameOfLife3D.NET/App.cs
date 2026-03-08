@@ -40,6 +40,7 @@ public sealed class App : IDisposable
     private bool _rightBracketWasDown;
     private bool _rWasDown;
     private bool _escWasDown;
+    private bool _zeroWasDown;
 
     public void Run()
     {
@@ -233,6 +234,7 @@ public sealed class App : IDisposable
             _rightBracketWasDown = false;
             _rWasDown = false;
             _escWasDown = false;
+            _zeroWasDown = false;
         }
 
         // Update systems
@@ -264,6 +266,7 @@ public sealed class App : IDisposable
         bool rightBracketDown = false;
         bool rDown = false;
         bool escDown = false;
+        bool zeroDown = false;
 
         foreach (var keyboard in _input!.Keyboards)
         {
@@ -274,6 +277,7 @@ public sealed class App : IDisposable
             if (keyboard.IsKeyPressed(Key.RightBracket)) rightBracketDown = true;
             if (keyboard.IsKeyPressed(Key.R)) rDown = true;
             if (keyboard.IsKeyPressed(Key.Escape)) escDown = true;
+            if (keyboard.IsKeyPressed(Key.Number0) || keyboard.IsKeyPressed(Key.Keypad0)) zeroDown = true;
         }
 
         // Space: play/pause
@@ -314,6 +318,11 @@ public sealed class App : IDisposable
         if (escDown && !_escWasDown && _editController is { IsActive: true })
             _editController.Deactivate();
         _escWasDown = escDown;
+
+        // 0: restart auto orbit camera
+        if (zeroDown && !_zeroWasDown)
+            _camera?.StartAutoOrbit();
+        _zeroWasDown = zeroDown;
     }
 
     private void ExportModel(string path, string format)

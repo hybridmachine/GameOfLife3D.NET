@@ -851,6 +851,7 @@ public sealed class ImGuiUI
             UIHelpers.LabelValue("  WASD", "Move");
             UIHelpers.LabelValue("  QE", "Rotate");
             UIHelpers.LabelValue("  RF", "Up / Down");
+            UIHelpers.LabelValue("  0", "Restart Auto Orbit");
             UIHelpers.LabelValue("  Space", "Play / Pause");
             UIHelpers.LabelValue("  F12", "Screenshot");
             UIHelpers.LabelValue("  E", "Toggle Edit");
