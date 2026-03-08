@@ -75,10 +75,15 @@ public sealed class ImGuiUI
     // Control panel
     private bool _isControlPanelOpen;
     private float _controlPanelSlide;
+    private bool _isTimelineVisible = true;
     private const float ControlPanelMargin = 10f;
     private const float ControlPanelSlideSpeed = 8f;
     private const float ControlPanelToggleSize = 34f;
     private const float ControlPanelToggleGap = 25f;
+    private const float TimelineBarHeight = 64f;
+    private const float StatusBarHeight = 30f;
+    private const float TimelineToggleSize = 30f;
+    private const float TimelineToggleMargin = 10f;
 
     private static readonly string[] GridSizes = ["25", "50", "75", "100", "150", "200"];
     private static readonly int[] GridSizeValues = [25, 50, 75, 100, 150, 200];
@@ -208,11 +213,13 @@ public sealed class ImGuiUI
     {
         UpdateControlPanelAnimation();
         RenderControlPanel(windowWidth, windowHeight);
-        _timeline.Render(windowWidth, windowHeight);
+        if (_isTimelineVisible)
+            _timeline.Render(windowWidth, windowHeight);
         _statusBar.ShowEditBadge = _editController?.IsActive ?? false;
         _statusBar.Render(_displayStart, _displayEnd, _engine.RuleString,
             _renderer.GetVisibleCellCount(), windowWidth, windowHeight);
         RenderControlPanelToggle(windowWidth);
+        RenderTimelineToggle(windowHeight);
     }
 
     private void RenderControlPanel(int windowWidth, int windowHeight)
@@ -321,6 +328,69 @@ public sealed class ImGuiUI
             _controlPanelSlide = MathF.Min(target, _controlPanelSlide + step);
         else if (_controlPanelSlide > target)
             _controlPanelSlide = MathF.Max(target, _controlPanelSlide - step);
+    }
+
+    private void RenderTimelineToggle(int windowHeight)
+    {
+        float toggleY = windowHeight - StatusBarHeight - TimelineToggleSize - TimelineToggleMargin;
+        if (_isTimelineVisible)
+            toggleY -= TimelineBarHeight;
+
+        ImGui.SetNextWindowPos(new Vector2(TimelineToggleMargin, toggleY), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new Vector2(TimelineToggleSize, TimelineToggleSize), ImGuiCond.Always);
+        ImGui.SetNextWindowBgAlpha(0f);
+
+        var flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings |
+            ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing;
+
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        if (ImGui.Begin("##TimelineToggle", flags))
+        {
+            Vector4 buttonColor = _isTimelineVisible ? Theme.AccentMuted : Theme.BgSurface;
+            ImGui.PushStyleColor(ImGuiCol.Button, buttonColor);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Theme.FrameHover);
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, Theme.FrameActive);
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8f);
+
+            if (ImGui.Button("##timeline_toggle_btn", new Vector2(TimelineToggleSize, TimelineToggleSize)))
+                _isTimelineVisible = !_isTimelineVisible;
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(_isTimelineVisible ? "Hide play bar" : "Show play bar");
+
+            var drawList = ImGui.GetWindowDrawList();
+            var min = ImGui.GetItemRectMin();
+            var max = ImGui.GetItemRectMax();
+            var center = (min + max) * 0.5f;
+            float halfWidth = TimelineToggleSize * 0.16f;
+            float halfHeight = TimelineToggleSize * 0.12f;
+            uint iconColor = ImGui.ColorConvertFloat4ToU32(Theme.TextPrimary);
+
+            Vector2 left;
+            Vector2 middle;
+            Vector2 right;
+
+            if (_isTimelineVisible)
+            {
+                left = new Vector2(center.X - halfWidth, center.Y - halfHeight);
+                middle = new Vector2(center.X, center.Y + halfHeight);
+                right = new Vector2(center.X + halfWidth, center.Y - halfHeight);
+            }
+            else
+            {
+                left = new Vector2(center.X - halfWidth, center.Y + halfHeight);
+                middle = new Vector2(center.X, center.Y - halfHeight);
+                right = new Vector2(center.X + halfWidth, center.Y + halfHeight);
+            }
+
+            drawList.AddLine(left, middle, iconColor, 2f);
+            drawList.AddLine(middle, right, iconColor, 2f);
+
+            ImGui.PopStyleVar();
+            ImGui.PopStyleColor(3);
+        }
+        ImGui.End();
+        ImGui.PopStyleVar();
     }
 
     private void RenderSimulationSection()
