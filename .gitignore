@@ -42,6 +42,10 @@ bld/
 
 ## Signing config (contains account details)
 signing/signing-config.json
+signing/macOS/macos-signing-config.json
+
+## Build output
+build/
 
 ## OS files
 Thumbs.db

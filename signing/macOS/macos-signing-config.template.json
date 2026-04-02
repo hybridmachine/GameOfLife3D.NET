@@ -1,0 +1,6 @@
+{
+    "TeamId": "YOUR_TEAM_ID",
+    "CertificateIdentity": "Developer ID Application: Your Name (TEAM_ID)",
+    "NotarizationKeychainProfile": "GameOfLife3D-notarize",
+    "BundleIdentifier": "com.softcentral.gameoflife3d"
+}
