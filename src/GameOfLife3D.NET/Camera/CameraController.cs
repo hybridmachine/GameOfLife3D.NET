@@ -87,11 +87,21 @@ public sealed class CameraController
 
     public void StartFlythrough(FlythroughPath path, Func<Vector3, Vector3, FlythroughPath?>? pathGenerator = null)
     {
+        if (_flythroughActive)
+        {
+            // Already flying — swap path without losing the original restore point
+            _flythroughPath = path;
+            _flythroughPathGenerator = pathGenerator;
+            _flythroughTime = 0f;
+            return;
+        }
+
         _preFlythroughState = GetState();
         _preFlythroughAutoOrbit = _autoOrbitEnabled;
         _autoOrbitEnabled = false;
         _isDragging = false;
         _dragButton = -1;
+        _keysDown.Clear();
         _flythroughPath = path;
         _flythroughPathGenerator = pathGenerator;
         _flythroughTime = 0f;
@@ -114,6 +124,7 @@ public sealed class CameraController
 
         _isDragging = false;
         _dragButton = -1;
+        _keysDown.Clear();
     }
 
     public void Update(float deltaTime)
@@ -177,12 +188,13 @@ public sealed class CameraController
 
         if (_flythroughTime >= path.TotalDuration)
         {
-            // Try to generate a new path continuing from current position
+            // Try to generate a new path continuing from the current camera pose
             if (_flythroughPathGenerator != null)
             {
-                var lastPos = path.PositionWaypoints[^1];
-                var lastLookAt = path.LookAtWaypoints[^1];
-                var nextPath = _flythroughPathGenerator(lastPos, lastLookAt);
+                // Evaluate the final pose so the next path seeds from exactly where we are
+                var finalPos = path.PositionWaypoints[^1];
+                var finalLookAt = path.LookAtWaypoints[^1];
+                var nextPath = _flythroughPathGenerator(_cameraPosition, finalLookAt);
                 if (nextPath != null)
                 {
                     _flythroughPath = nextPath;

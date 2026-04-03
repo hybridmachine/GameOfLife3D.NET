@@ -16,30 +16,26 @@ public static class FlythroughPathGenerator
         Vector3 currentCameraPosition,
         Vector3 currentCameraTarget)
     {
-        // Collect all visible live cells in world coordinates
+        // Compute the AABB of all visible live cells in world coordinates incrementally
         float halfSize = gridSize / 2f;
-        var allCells = new List<Vector3>();
+        var min = new Vector3(float.MaxValue);
+        var max = new Vector3(float.MinValue);
+        bool hasVisibleCells = false;
 
         for (int genIndex = displayStart; genIndex <= displayEnd && genIndex < generations.Count; genIndex++)
         {
             var gen = generations[genIndex];
             foreach (var cell in gen.LiveCells)
             {
-                allCells.Add(new Vector3(cell.X - halfSize, genIndex, cell.Y - halfSize));
+                var worldCell = new Vector3(cell.X - halfSize, genIndex, cell.Y - halfSize);
+                min = Vector3.Min(min, worldCell);
+                max = Vector3.Max(max, worldCell);
+                hasVisibleCells = true;
             }
         }
 
-        if (allCells.Count == 0)
+        if (!hasVisibleCells)
             return null;
-
-        // Compute AABB
-        var min = new Vector3(float.MaxValue);
-        var max = new Vector3(float.MinValue);
-        foreach (var c in allCells)
-        {
-            min = Vector3.Min(min, c);
-            max = Vector3.Max(max, c);
-        }
 
         var center = (min + max) * 0.5f;
         var extents = max - min;
@@ -48,7 +44,7 @@ public static class FlythroughPathGenerator
         // Find density hotspots
         var hotspots = FindHotspots(generations, displayStart, displayEnd, halfSize);
 
-        var rng = new Random();
+        var rng = Random.Shared;
 
         // Build waypoints
         var positions = new List<Vector3>();
@@ -75,7 +71,7 @@ public static class FlythroughPathGenerator
             center.X + MathF.Cos(sweepAngle) * sweepDist,
             max.Y * 0.7f,
             center.Z + MathF.Sin(sweepAngle) * sweepDist));
-        lookAts.Add(center with { Y = max.Y * 0.5f });
+        lookAts.Add(new Vector3(center.X, max.Y * 0.5f, center.Z));
 
         // 4. Close-up passes near hotspots (2-3)
         var shuffledHotspots = hotspots.OrderBy(_ => rng.Next()).Take(3).ToList();
@@ -107,7 +103,7 @@ public static class FlythroughPathGenerator
                 center.X + MathF.Cos(theta) * orbitDist,
                 y,
                 center.Z + MathF.Sin(theta) * orbitDist));
-            lookAts.Add(center with { Y = y });
+            lookAts.Add(new Vector3(center.X, y, center.Z));
         }
 
         // 6. Closing shot — different angle from start
