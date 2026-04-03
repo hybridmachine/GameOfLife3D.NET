@@ -32,9 +32,18 @@ public sealed class CameraController
     private float _aspectRatio = 16f / 9f;
     private float _fov = 60f * MathF.PI / 180f;
 
+    // Flythrough state
+    private bool _flythroughActive;
+    private FlythroughPath? _flythroughPath;
+    private float _flythroughTime;
+    private CameraState? _preFlythroughState;
+    private bool _preFlythroughAutoOrbit;
+
     public Matrix4x4 ViewMatrix => _viewMatrix;
     public Matrix4x4 ProjectionMatrix => Matrix4x4.CreatePerspectiveFieldOfView(_fov, _aspectRatio, 0.1f, 10000f);
     public Vector3 Position => _cameraPosition;
+    public Vector3 Target => _target;
+    public bool IsFlythroughActive => _flythroughActive;
     public float AspectRatio { set => _aspectRatio = value; }
 
     public CameraController()
@@ -75,8 +84,43 @@ public sealed class CameraController
         _autoOrbitEnabled = false;
     }
 
+    public void StartFlythrough(FlythroughPath path)
+    {
+        _preFlythroughState = GetState();
+        _preFlythroughAutoOrbit = _autoOrbitEnabled;
+        _autoOrbitEnabled = false;
+        _isDragging = false;
+        _dragButton = -1;
+        _flythroughPath = path;
+        _flythroughTime = 0f;
+        _flythroughActive = true;
+    }
+
+    public void StopFlythrough()
+    {
+        if (!_flythroughActive) return;
+
+        _flythroughActive = false;
+        _flythroughPath = null;
+
+        if (_preFlythroughState != null)
+            SetState(_preFlythroughState);
+
+        if (_preFlythroughAutoOrbit)
+            _autoOrbitEnabled = true;
+
+        _isDragging = false;
+        _dragButton = -1;
+    }
+
     public void Update(float deltaTime)
     {
+        if (_flythroughActive && _flythroughPath != null)
+        {
+            UpdateFlythrough(deltaTime);
+            return;
+        }
+
         if (_autoOrbitEnabled)
         {
             OrbitAroundY(-AutoOrbitAngularSpeed * deltaTime);
@@ -95,7 +139,7 @@ public sealed class CameraController
         if (IsKeyDown(Key.A) || IsKeyDown(Key.Left)) { move -= right; hasKeyboardCameraInput = true; }
         if (IsKeyDown(Key.D) || IsKeyDown(Key.Right)) { move += right; hasKeyboardCameraInput = true; }
         if (IsKeyDown(Key.R)) { move += up; hasKeyboardCameraInput = true; }
-        if (IsKeyDown(Key.F)) { move -= up; hasKeyboardCameraInput = true; }
+        if (IsKeyDown(Key.C)) { move -= up; hasKeyboardCameraInput = true; }
 
         if (IsKeyDown(Key.Q))
         {
@@ -123,6 +167,62 @@ public sealed class CameraController
         }
     }
 
+    private void UpdateFlythrough(float deltaTime)
+    {
+        var path = _flythroughPath!;
+        _flythroughTime += deltaTime;
+
+        if (_flythroughTime >= path.TotalDuration)
+        {
+            StopFlythrough();
+            return;
+        }
+
+        int waypointCount = path.PositionWaypoints.Count;
+        if (waypointCount < 2) { StopFlythrough(); return; }
+
+        float normalizedT = Math.Clamp(_flythroughTime / path.TotalDuration, 0f, 1f);
+        float segmentFloat = normalizedT * (waypointCount - 1);
+        int segmentIndex = (int)segmentFloat;
+        float localT = segmentFloat - segmentIndex;
+
+        // Pick 4 control points for position spline (clamped at ends)
+        int i0 = Math.Max(segmentIndex - 1, 0);
+        int i1 = segmentIndex;
+        int i2 = Math.Min(segmentIndex + 1, waypointCount - 1);
+        int i3 = Math.Min(segmentIndex + 2, waypointCount - 1);
+
+        var position = CatmullRomSpline.Evaluate(
+            path.PositionWaypoints[i0], path.PositionWaypoints[i1],
+            path.PositionWaypoints[i2], path.PositionWaypoints[i3], localT);
+
+        var lookAt = CatmullRomSpline.Evaluate(
+            path.LookAtWaypoints[i0], path.LookAtWaypoints[i1],
+            path.LookAtWaypoints[i2], path.LookAtWaypoints[i3], localT);
+
+        // Safety: floor clamp
+        position.Y = Math.Max(position.Y, -1f);
+
+        // Safety: minimum separation between camera and look-at
+        var toTarget = lookAt - position;
+        float dist = toTarget.Length();
+        if (dist < 2f)
+        {
+            var dir = dist > 0.001f ? toTarget / dist : Vector3.UnitZ;
+            position = lookAt - dir * 2f;
+        }
+
+        // Safety: up-vector singularity — if looking nearly straight up/down, tilt up vector
+        var viewDir = Vector3.Normalize(lookAt - position);
+        float dotUp = Math.Abs(Vector3.Dot(viewDir, Vector3.UnitY));
+        var upVector = dotUp > 0.99f
+            ? Vector3.Normalize(Vector3.UnitY + Vector3.UnitX * 0.1f)
+            : Vector3.UnitY;
+
+        _cameraPosition = position;
+        _viewMatrix = Matrix4x4.CreateLookAt(position, lookAt, upVector);
+    }
+
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
     {
         _keysDown.Add(key);
@@ -140,6 +240,7 @@ public sealed class CameraController
     private void OnMouseDown(IMouse mouse, MouseButton button)
     {
         if (_imGuiWantsMouse) return;
+        if (_flythroughActive) return;
 
         if (button is MouseButton.Left or MouseButton.Right or MouseButton.Middle)
         {
@@ -162,6 +263,7 @@ public sealed class CameraController
 
     private void OnMouseMove(IMouse mouse, Vector2 position)
     {
+        if (_flythroughActive) return;
         if (!_isDragging || _imGuiWantsMouse) return;
 
         float deltaX = position.X - _lastMouse.X;
@@ -185,6 +287,7 @@ public sealed class CameraController
     private void OnScroll(IMouse mouse, ScrollWheel scroll)
     {
         if (_imGuiWantsMouse) return;
+        if (_flythroughActive) return;
         StopAutoOrbit();
         float delta = scroll.Y > 0 ? 0.9f : 1.1f;
         _radius = Math.Clamp(_radius * delta, 1f, 1000f);
@@ -196,7 +299,7 @@ public sealed class CameraController
     private static bool IsCameraControlKey(Key key) => key is
         Key.W or Key.A or Key.S or Key.D or
         Key.Up or Key.Down or Key.Left or Key.Right or
-        Key.Q or Key.E or Key.R or Key.F;
+        Key.Q or Key.E or Key.R or Key.C;
 
     private void ApplyPan(float rightAmount, float upAmount)
     {

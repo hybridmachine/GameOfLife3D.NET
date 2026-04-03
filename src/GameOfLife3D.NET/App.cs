@@ -41,6 +41,7 @@ public sealed class App : IDisposable
     private bool _rWasDown;
     private bool _escWasDown;
     private bool _zeroWasDown;
+    private bool _fWasDown;
 
     public void Run()
     {
@@ -177,6 +178,7 @@ public sealed class App : IDisposable
     private void OnMouseDownForEditing(IMouse mouse, MouseButton button)
     {
         if (_editController == null || _camera == null || !_editController.IsActive) return;
+        if (_camera.IsFlythroughActive) return;
 
         var io = ImGui.GetIO();
         if (io.WantCaptureMouse) return;
@@ -195,6 +197,7 @@ public sealed class App : IDisposable
     private void OnMouseMoveForEditing(IMouse mouse, Vector2 position)
     {
         if (_editController == null || _camera == null || !_editController.IsActive) return;
+        if (_camera.IsFlythroughActive) return;
 
         var io = ImGui.GetIO();
         if (io.WantCaptureMouse) return;
@@ -235,6 +238,7 @@ public sealed class App : IDisposable
             _rWasDown = false;
             _escWasDown = false;
             _zeroWasDown = false;
+            _fWasDown = false;
         }
 
         // Update systems
@@ -323,6 +327,42 @@ public sealed class App : IDisposable
         if (zeroDown && !_zeroWasDown)
             _camera?.StartAutoOrbit();
         _zeroWasDown = zeroDown;
+
+        // F: toggle flythrough
+        bool fDown = false;
+        foreach (var keyboard in _input!.Keyboards)
+        {
+            if (keyboard.IsKeyPressed(Key.F)) fDown = true;
+        }
+
+        if (fDown && !_fWasDown && _camera != null)
+        {
+            if (_camera.IsFlythroughActive)
+            {
+                _camera.StopFlythrough();
+            }
+            else
+            {
+                // Deactivate edit mode if active
+                if (_editController is { IsActive: true })
+                    _editController.Deactivate();
+
+                // Pause playback
+                _ui!.Pause();
+
+                // Generate and start flythrough
+                var path = FlythroughPathGenerator.Generate(
+                    _engine!.Generations,
+                    _ui.DisplayStart, _ui.DisplayEnd,
+                    _engine.GridSize,
+                    _camera.Position,
+                    _camera.Target);
+
+                if (path != null)
+                    _camera.StartFlythrough(path);
+            }
+        }
+        _fWasDown = fDown;
     }
 
     private void ExportModel(string path, string format)

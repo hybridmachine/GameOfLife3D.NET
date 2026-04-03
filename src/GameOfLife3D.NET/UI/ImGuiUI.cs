@@ -152,6 +152,12 @@ public sealed class ImGuiUI
         _timeline.SetPlaying(_isPlaying);
     }
 
+    public void Pause()
+    {
+        _isPlaying = false;
+        _timeline.SetPlaying(false);
+    }
+
     public void Tick(double currentTime)
     {
         if (!_isPlaying) return;
@@ -187,6 +193,9 @@ public sealed class ImGuiUI
 
     private void OnRangeChanged(int start, int end)
     {
+        if (_camera.IsFlythroughActive)
+            _camera.StopFlythrough();
+
         _displayStart = start;
         _displayEnd = end;
     }
@@ -812,6 +821,8 @@ public sealed class ImGuiUI
             ImGui.SameLine();
             if (ImGui.Button("Load Session", new Vector2(btnWidth, 0)))
             {
+                if (_camera.IsFlythroughActive)
+                    _camera.StopFlythrough();
                 var path = FileDialogHelper.OpenFile("json");
                 if (path != null)
                 {
@@ -849,6 +860,8 @@ public sealed class ImGuiUI
 
             if (UIHelpers.AccentButton("Save Session", new Vector2(fullWidth, 0)))
             {
+                if (_camera.IsFlythroughActive)
+                    _camera.StopFlythrough();
                 var path = FileDialogHelper.SaveFile("json");
                 if (path != null)
                 {
@@ -903,7 +916,11 @@ public sealed class ImGuiUI
         if (UIHelpers.SectionHeader("\u25CE", "Camera", defaultOpen: false))
         {
             if (ImGui.Button("Reset Camera", new Vector2(ImGui.GetContentRegionAvail().X, 0)))
+            {
+                if (_camera.IsFlythroughActive)
+                    _camera.StopFlythrough();
                 _camera.Reset();
+            }
 
             ImGui.Spacing();
             UIHelpers.BeginGroup("camera_help");
@@ -920,8 +937,9 @@ public sealed class ImGuiUI
             ImGui.PopStyleColor();
             UIHelpers.LabelValue("  WASD", "Move");
             UIHelpers.LabelValue("  QE", "Rotate");
-            UIHelpers.LabelValue("  RF", "Up / Down");
+            UIHelpers.LabelValue("  RC", "Up / Down");
             UIHelpers.LabelValue("  0", "Restart Auto Orbit");
+            UIHelpers.LabelValue("  F", "Toggle Flythrough");
             UIHelpers.LabelValue("  Space", "Play / Pause");
             UIHelpers.LabelValue("  F12", "Screenshot");
             UIHelpers.LabelValue("  E", "Toggle Edit");
