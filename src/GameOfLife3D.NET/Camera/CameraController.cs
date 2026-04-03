@@ -38,6 +38,7 @@ public sealed class CameraController
     private float _flythroughTime;
     private CameraState? _preFlythroughState;
     private bool _preFlythroughAutoOrbit;
+    private Func<Vector3, Vector3, FlythroughPath?>? _flythroughPathGenerator;
 
     public Matrix4x4 ViewMatrix => _viewMatrix;
     public Matrix4x4 ProjectionMatrix => Matrix4x4.CreatePerspectiveFieldOfView(_fov, _aspectRatio, 0.1f, 10000f);
@@ -84,7 +85,7 @@ public sealed class CameraController
         _autoOrbitEnabled = false;
     }
 
-    public void StartFlythrough(FlythroughPath path)
+    public void StartFlythrough(FlythroughPath path, Func<Vector3, Vector3, FlythroughPath?>? pathGenerator = null)
     {
         _preFlythroughState = GetState();
         _preFlythroughAutoOrbit = _autoOrbitEnabled;
@@ -92,6 +93,7 @@ public sealed class CameraController
         _isDragging = false;
         _dragButton = -1;
         _flythroughPath = path;
+        _flythroughPathGenerator = pathGenerator;
         _flythroughTime = 0f;
         _flythroughActive = true;
     }
@@ -102,6 +104,7 @@ public sealed class CameraController
 
         _flythroughActive = false;
         _flythroughPath = null;
+        _flythroughPathGenerator = null;
 
         if (_preFlythroughState != null)
             SetState(_preFlythroughState);
@@ -174,6 +177,20 @@ public sealed class CameraController
 
         if (_flythroughTime >= path.TotalDuration)
         {
+            // Try to generate a new path continuing from current position
+            if (_flythroughPathGenerator != null)
+            {
+                var lastPos = path.PositionWaypoints[^1];
+                var lastLookAt = path.LookAtWaypoints[^1];
+                var nextPath = _flythroughPathGenerator(lastPos, lastLookAt);
+                if (nextPath != null)
+                {
+                    _flythroughPath = nextPath;
+                    _flythroughTime = 0f;
+                    return;
+                }
+            }
+
             StopFlythrough();
             return;
         }

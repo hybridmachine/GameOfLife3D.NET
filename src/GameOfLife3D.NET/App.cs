@@ -350,7 +350,7 @@ public sealed class App : IDisposable
                 // Pause playback
                 _ui!.Pause();
 
-                // Generate and start flythrough
+                // Generate and start flythrough with continuous looping
                 var path = FlythroughPathGenerator.Generate(
                     _engine!.Generations,
                     _ui.DisplayStart, _ui.DisplayEnd,
@@ -359,7 +359,13 @@ public sealed class App : IDisposable
                     _camera.Target);
 
                 if (path != null)
-                    _camera.StartFlythrough(path);
+                {
+                    _camera.StartFlythrough(path, (pos, lookAt) =>
+                        FlythroughPathGenerator.Generate(
+                            _engine.Generations,
+                            _ui.DisplayStart, _ui.DisplayEnd,
+                            _engine.GridSize, pos, lookAt));
+                }
             }
         }
         _fWasDown = fDown;
