@@ -69,9 +69,9 @@ public static class FlythroughPathGenerator
         float sweepDist = modelRadius * (0.8f + (float)rng.NextDouble() * 0.4f);
         positions.Add(new Vector3(
             center.X + MathF.Cos(sweepAngle) * sweepDist,
-            max.Y * 0.7f,
+            min.Y + extents.Y * 0.7f,
             center.Z + MathF.Sin(sweepAngle) * sweepDist));
-        lookAts.Add(new Vector3(center.X, max.Y * 0.5f, center.Z));
+        lookAts.Add(new Vector3(center.X, min.Y + extents.Y * 0.5f, center.Z));
 
         // 4. Close-up passes near hotspots (2-3)
         var shuffledHotspots = hotspots.OrderBy(_ => rng.Next()).Take(3).ToList();
