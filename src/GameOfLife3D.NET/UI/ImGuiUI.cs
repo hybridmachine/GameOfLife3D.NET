@@ -34,7 +34,7 @@ public sealed class ImGuiUI
     private bool _showGenerationLabels;
     private bool _showWireframe;
     private bool _toroidal;
-    private float _randomDensity = 30f;
+    private float _randomDensity = 30f; // Stored as a percentage (5-80), not a normalized 0-1 density.
 
     // Fog
     private bool _fogEnabled;
