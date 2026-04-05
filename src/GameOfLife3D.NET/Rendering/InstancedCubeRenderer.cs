@@ -140,6 +140,10 @@ public sealed class InstancedCubeRenderer : IDisposable
         shader.SetUniform("uClipEnabled", settings.ClipEnabled);
         shader.SetUniform("uClipY", settings.ClipY);
 
+        // Generation fade-in
+        shader.SetUniform("uFadeGeneration", settings.FadeGeneration);
+        shader.SetUniform("uFadeOpacity", settings.FadeOpacity);
+
         GetActiveMesh(settings, out uint vao, out uint indexCount);
         _gl.BindVertexArray(vao);
         unsafe
@@ -173,6 +177,10 @@ public sealed class InstancedCubeRenderer : IDisposable
         // Clip plane
         shader.SetUniform("uClipEnabled", settings.ClipEnabled);
         shader.SetUniform("uClipY", settings.ClipY);
+
+        // Generation fade-in
+        shader.SetUniform("uFadeGeneration", settings.FadeGeneration);
+        shader.SetUniform("uFadeOpacity", settings.FadeOpacity);
 
         _gl.Enable(EnableCap.PolygonOffsetLine);
         _gl.PolygonOffset(-1f, -1f);

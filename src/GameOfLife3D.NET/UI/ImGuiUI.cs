@@ -33,7 +33,7 @@ public sealed class ImGuiUI
     private bool _showGridLines;
     private bool _showGenerationLabels;
     private bool _showWireframe;
-    private bool _toroidal;
+    private bool _toroidal = true;
     private float _randomDensity = 30f; // Stored as a percentage (5-80), not a normalized 0-1 density.
 
     // Fog
@@ -57,7 +57,7 @@ public sealed class ImGuiUI
     private float _bloomIntensity = 0.5f;
 
     // Beveled cubes
-    private bool _useBeveledCubes;
+    private bool _useBeveledCubes = true;
 
     // Population stats
     private float[] _populationData = [];
@@ -66,6 +66,10 @@ public sealed class ImGuiUI
     // Display state
     private int _displayStart;
     private int _displayEnd;
+
+    // Cinematic mode
+    private double _lastTickTime;
+    private double _cinematicHintStartTime;
 
     // Animation
     private bool _isPlaying;
@@ -111,6 +115,7 @@ public sealed class ImGuiUI
     public int DisplayStart => _displayStart;
     public int DisplayEnd => _displayEnd;
     public bool IsPlaying => _isPlaying;
+    public bool IsCinematicModeActive { get; set; }
 
     // Screenshot callback
     public Action? OnScreenshotRequested { get; set; }
@@ -160,6 +165,7 @@ public sealed class ImGuiUI
 
     public void Tick(double currentTime)
     {
+        _lastTickTime = currentTime;
         if (!_isPlaying) return;
 
         // Base speed 200ms, divided by speed multiplier
@@ -191,9 +197,31 @@ public sealed class ImGuiUI
         _timeline.SetRange(0, maxGen);
     }
 
+    public void SetDisplayEnd(int end)
+    {
+        int maxGen = Math.Max(0, _engine.GenerationCount - 1);
+        _displayEnd = Math.Clamp(end, _displayStart, maxGen);
+        _timeline.SetTotalGenerations(_engine.GenerationCount);
+        _timeline.SetEndGeneration(_displayEnd);
+    }
+
+    public void SetDisplayRange(int start, int end)
+    {
+        int maxGen = Math.Max(0, _engine.GenerationCount - 1);
+        _displayStart = Math.Clamp(start, 0, maxGen);
+        _displayEnd = Math.Clamp(end, _displayStart, maxGen);
+        _timeline.SetTotalGenerations(_engine.GenerationCount);
+        _timeline.SetRange(_displayStart, _displayEnd);
+    }
+
+    public void StartCinematicHint(double currentTime)
+    {
+        _cinematicHintStartTime = currentTime;
+    }
+
     private void OnRangeChanged(int start, int end)
     {
-        if (_camera.IsFlythroughActive)
+        if (!IsCinematicModeActive && _camera.IsFlythroughActive)
             _camera.StopFlythrough();
 
         _displayStart = start;
@@ -220,6 +248,12 @@ public sealed class ImGuiUI
 
     public void Render(int windowWidth, int windowHeight)
     {
+        if (IsCinematicModeActive)
+        {
+            RenderCinematicHint(windowWidth, windowHeight);
+            return;
+        }
+
         UpdateControlPanelAnimation();
         RenderControlPanel(windowWidth, windowHeight);
         if (_isTimelineVisible)
@@ -229,6 +263,45 @@ public sealed class ImGuiUI
             _renderer.GetVisibleCellCount(), windowWidth, windowHeight);
         RenderControlPanelToggle(windowWidth);
         RenderTimelineToggle(windowHeight);
+    }
+
+    private void RenderCinematicHint(int windowWidth, int windowHeight)
+    {
+        var drawList = ImGui.GetForegroundDrawList();
+        double elapsed = _lastTickTime - _cinematicHintStartTime;
+
+        // Main "Cinematic Mode" text fades out over 3 seconds (visible for first 1s, then fades)
+        if (elapsed < 4.0)
+        {
+            float alpha = elapsed < 1.0 ? 1.0f : Math.Max(0f, 1.0f - (float)(elapsed - 1.0) / 3.0f);
+            uint color = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, alpha));
+
+            string title = "Cinematic Mode";
+            var titleSize = ImGui.CalcTextSize(title);
+            string subtitle = "Press Escape to Stop";
+            var subtitleSize = ImGui.CalcTextSize(subtitle);
+
+            float totalHeight = titleSize.Y + 8f + subtitleSize.Y;
+            float topY = (windowHeight - totalHeight) * 0.5f;
+
+            drawList.AddText(
+                new Vector2((windowWidth - titleSize.X) * 0.5f, topY),
+                color, title);
+            drawList.AddText(
+                new Vector2((windowWidth - subtitleSize.X) * 0.5f, topY + titleSize.Y + 8f),
+                color, subtitle);
+        }
+
+        // Subtle persistent exit hint at bottom
+        {
+            string hint = "Press P or Esc to exit";
+            var hintSize = ImGui.CalcTextSize(hint);
+            var hintPos = new Vector2(
+                (windowWidth - hintSize.X) * 0.5f,
+                windowHeight - hintSize.Y - 20f);
+            uint hintColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.15f));
+            drawList.AddText(hintPos, hintColor, hint);
+        }
     }
 
     private void RenderControlPanel(int windowWidth, int windowHeight)
@@ -942,6 +1015,7 @@ public sealed class ImGuiUI
             UIHelpers.LabelValue("  RC", "Up / Down");
             UIHelpers.LabelValue("  0", "Restart Auto Orbit");
             UIHelpers.LabelValue("  F", "Toggle Flythrough");
+            UIHelpers.LabelValue("  P", "Toggle Cinematic");
             UIHelpers.LabelValue("  Space", "Play / Pause");
             UIHelpers.LabelValue("  F12", "Screenshot");
             UIHelpers.LabelValue("  E", "Toggle Edit");

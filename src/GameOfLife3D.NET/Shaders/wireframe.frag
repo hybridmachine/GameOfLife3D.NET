@@ -21,6 +21,10 @@ uniform vec3 uFogColor;
 uniform bool uClipEnabled;
 uniform float uClipY;
 
+// Generation fade-in
+uniform float uFadeGeneration;
+uniform float uFadeOpacity;
+
 out vec4 FragColor;
 
 #include "gradient.glsl"
@@ -87,6 +91,10 @@ void main()
     }
 
     float alpha = 0.8;
+
+    // Generation fade-in
+    if (uFadeGeneration >= 0.0 && abs(vGenerationT - uFadeGeneration) < 0.5)
+        alpha *= uFadeOpacity;
 
     // Fog
     if (uFogEnabled)

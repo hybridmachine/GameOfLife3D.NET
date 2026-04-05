@@ -43,6 +43,11 @@ public sealed class App : IDisposable
     private bool _zeroWasDown;
     private bool _fWasDown;
 
+    // Cinematic mode
+    private CinematicController? _cinematic;
+    private bool _pWasDown;
+    private bool _escCinematicWasDown;
+
     public void Run()
     {
         var options = WindowOptions.Default;
@@ -160,6 +165,9 @@ public sealed class App : IDisposable
         _ui.OnExportSTL = path => ExportModel(path, "stl");
         _ui.OnExportOBJ = path => ExportModel(path, "obj");
 
+        // Initialize cinematic controller
+        _cinematic = new CinematicController(_engine, _camera, _ui, _renderer);
+
         // Wire mouse clicks for editing
         foreach (var mouse in _input.Mice)
         {
@@ -173,6 +181,11 @@ public sealed class App : IDisposable
         _gl.Enable(EnableCap.CullFace);
 
         _startTime = _window.Time;
+
+        // Start cinematic mode on launch
+        _ui.IsCinematicModeActive = true;
+        _ui.StartCinematicHint(_startTime);
+        _cinematic!.Start(_startTime);
     }
 
     private void OnMouseDownForEditing(IMouse mouse, MouseButton button)
@@ -223,8 +236,11 @@ public sealed class App : IDisposable
         var io = ImGui.GetIO();
         _camera.SetImGuiCapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
 
-        // Handle keyboard shortcuts
-        if (!io.WantCaptureKeyboard)
+        // Handle cinematic mode shortcuts (always active, even during WantCaptureKeyboard)
+        HandleCinematicShortcuts(currentTime);
+
+        // Handle keyboard shortcuts (blocked during cinematic mode)
+        if (!io.WantCaptureKeyboard && !(_cinematic?.IsActive ?? false))
         {
             HandleKeyboardShortcuts();
         }
@@ -244,6 +260,7 @@ public sealed class App : IDisposable
         // Update systems
         _camera.Update((float)deltaTime);
         _ui.Tick(currentTime);
+        _cinematic?.Update(currentTime);
         _ui.StatusBar.UpdateFPS(currentTime);
 
         // Update renderer with current generations
@@ -369,6 +386,57 @@ public sealed class App : IDisposable
             }
         }
         _fWasDown = fDown;
+    }
+
+    private void HandleCinematicShortcuts(double currentTime)
+    {
+        if (_cinematic == null || _input == null) return;
+
+        var io = ImGui.GetIO();
+
+        bool pDown = false;
+        bool escDown = false;
+        foreach (var keyboard in _input.Keyboards)
+        {
+            if (keyboard.IsKeyPressed(Key.P)) pDown = true;
+            if (keyboard.IsKeyPressed(Key.Escape)) escDown = true;
+        }
+
+        // Only process when ImGui doesn't want keyboard, or cinematic is already active
+        bool canProcess = !io.WantCaptureKeyboard || _cinematic.IsActive;
+
+        if (canProcess)
+        {
+            // P toggles cinematic mode on/off
+            if (pDown && !_pWasDown)
+            {
+                if (_cinematic.IsActive)
+                {
+                    _cinematic.Stop();
+                    _ui!.IsCinematicModeActive = false;
+                }
+                else
+                {
+                    // Deactivate edit mode if active
+                    if (_editController is { IsActive: true })
+                        _editController.Deactivate();
+
+                    _ui!.IsCinematicModeActive = true;
+                    _ui.StartCinematicHint(currentTime);
+                    _cinematic.Start(currentTime);
+                }
+            }
+
+            // Escape exits cinematic mode (if active)
+            if (escDown && !_escCinematicWasDown && _cinematic.IsActive)
+            {
+                _cinematic.Stop();
+                _ui!.IsCinematicModeActive = false;
+            }
+        }
+
+        _pWasDown = pDown;
+        _escCinematicWasDown = escDown;
     }
 
     private void ExportModel(string path, string format)

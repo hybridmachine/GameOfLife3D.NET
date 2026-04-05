@@ -35,7 +35,11 @@ public sealed class RenderSettings
     public float BloomIntensity { get; set; } = 0.5f;
 
     // Beveled cubes
-    public bool UseBeveledCubes { get; set; }
+    public bool UseBeveledCubes { get; set; } = true;
+
+    // Generation fade-in (cinematic mode)
+    public float FadeGeneration { get; set; } = -1f;
+    public float FadeOpacity { get; set; } = 1f;
 }
 
 public enum BackgroundMode

@@ -5,7 +5,7 @@ namespace GameOfLife3D.NET.Camera;
 
 public static class FlythroughPathGenerator
 {
-    private const float BaseDuration = 30f;
+    private const float BaseDuration = 36f;
     private const float MinOrbitRadius = 10f;
     private const int HotspotSegments = 5;
 

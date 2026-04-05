@@ -6,7 +6,7 @@ public sealed class GameEngine
 
     private int _gridSize;
     private readonly List<Generation> _generations = new();
-    private bool _toroidal;
+    private bool _toroidal = true;
     private HashSet<int> _birthRule = new([3]);
     private HashSet<int> _survivalRule = new([2, 3]);
     private string _currentRuleName = "conway";
