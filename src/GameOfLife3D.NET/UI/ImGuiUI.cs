@@ -234,9 +234,9 @@ public sealed class ImGuiUI
         _timeline.SetPlaying(false);
         _engine.Clear();
         _engine.SetRule("conway");
-        _engine.SetToroidal(false);
+        _engine.SetToroidal(true);
         _selectedRuleIdx = 0;
-        _toroidal = false;
+        _toroidal = true;
         _showCustomRule = false;
 
         var pattern = _patternLoader.GetBuiltInPattern("r-pentomino");

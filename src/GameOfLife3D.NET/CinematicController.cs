@@ -124,5 +124,8 @@ public sealed class CinematicController
                 return;
             }
         }
+
+        // All retries exhausted — stop cinematic mode rather than getting stuck
+        Stop();
     }
 }
