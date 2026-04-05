@@ -34,7 +34,7 @@ public sealed class ImGuiUI
     private bool _showGenerationLabels;
     private bool _showWireframe;
     private bool _toroidal;
-    private float _randomDensity = 0.3f;
+    private float _randomDensity = 30f;
 
     // Fog
     private bool _fogEnabled;
@@ -483,11 +483,12 @@ public sealed class ImGuiUI
             ImGui.Text("Random Seed");
             ImGui.PopStyleColor();
             ImGui.SetNextItemWidth(fullWidth - 70);
-            ImGui.SliderFloat("##density", ref _randomDensity, 0.05f, 0.8f, "Density: %.0f%%");
+            ImGui.SliderFloat("##density", ref _randomDensity, 5f, 80f, "Density: %.0f%%");
             ImGui.SameLine();
             if (UIHelpers.AccentButton("Go"))
             {
-                _engine.InitializeRandom(_randomDensity);
+                _engine.InitializeRandom(_randomDensity / 100f);
+                _renderer.InvalidateState();
                 SyncDisplayRange();
             }
         }
@@ -560,6 +561,7 @@ public sealed class ImGuiUI
                 if (ImGui.Button(kvp.Value.Name))
                 {
                     _engine.InitializeFromPattern(kvp.Value.Pattern);
+                    _renderer.InvalidateState();
                     SyncDisplayRange();
                 }
                 UIHelpers.Tooltip(kvp.Value.Description);
