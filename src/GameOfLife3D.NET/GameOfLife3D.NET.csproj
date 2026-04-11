@@ -30,6 +30,7 @@
     <EmbeddedResource Include="Shaders\*.frag" />
     <EmbeddedResource Include="Shaders\*.glsl" />
     <EmbeddedResource Include="..\..\resources\2k_stars_milky_way.jpg" Link="Resources\2k_stars_milky_way.jpg" />
+    <EmbeddedResource Include="Fonts\fa-solid-900.ttf" />
   </ItemGroup>
 
 </Project>

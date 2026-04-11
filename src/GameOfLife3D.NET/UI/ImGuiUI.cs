@@ -477,7 +477,7 @@ public sealed class ImGuiUI
 
     private void RenderSimulationSection()
     {
-        if (UIHelpers.SectionHeader("\u2699", "Simulation"))
+        if (UIHelpers.SectionHeader(Icons.Gear, "Simulation"))
         {
             float fullWidth = ImGui.GetContentRegionAvail().X;
 
@@ -569,7 +569,7 @@ public sealed class ImGuiUI
 
     private void RenderStatsSection()
     {
-        if (UIHelpers.SectionHeader("\u2261", "Statistics", defaultOpen: false))
+        if (UIHelpers.SectionHeader(Icons.ChartBar, "Statistics", defaultOpen: false))
         {
             // Rebuild population array if generation count changed
             if (_engine.GenerationCount != _lastPopulationGenCount)
@@ -610,7 +610,7 @@ public sealed class ImGuiUI
 
     private void RenderPatternSection()
     {
-        if (UIHelpers.SectionHeader("\u25A6", "Patterns"))
+        if (UIHelpers.SectionHeader(Icons.Grid, "Patterns"))
         {
             float fullWidth = ImGui.GetContentRegionAvail().X;
             float spacing = ImGui.GetStyle().ItemSpacing.X;
@@ -646,7 +646,7 @@ public sealed class ImGuiUI
 
     private void RenderVisualSection()
     {
-        if (UIHelpers.SectionHeader("\u25C9", "Appearance"))
+        if (UIHelpers.SectionHeader(Icons.Palette, "Appearance"))
         {
             var settings = _renderer.Settings;
             float fullWidth = ImGui.GetContentRegionAvail().X;
@@ -808,7 +808,7 @@ public sealed class ImGuiUI
     {
         if (_editController == null) return;
 
-        if (UIHelpers.SectionHeader("\u270E", "Editing", defaultOpen: false))
+        if (UIHelpers.SectionHeader(Icons.Pencil, "Editing", defaultOpen: false))
         {
             float fullWidth = ImGui.GetContentRegionAvail().X;
 
@@ -868,7 +868,7 @@ public sealed class ImGuiUI
 
     private void RenderFileSection()
     {
-        if (UIHelpers.SectionHeader("\u25C6", "File", defaultOpen: false))
+        if (UIHelpers.SectionHeader(Icons.FloppyDisk, "File", defaultOpen: false))
         {
             float fullWidth = ImGui.GetContentRegionAvail().X;
             float btnWidth = (fullWidth - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
@@ -988,7 +988,7 @@ public sealed class ImGuiUI
 
     private void RenderCameraSection()
     {
-        if (UIHelpers.SectionHeader("\u25CE", "Camera", defaultOpen: false))
+        if (UIHelpers.SectionHeader(Icons.Camera, "Camera", defaultOpen: false))
         {
             if (ImGui.Button("Reset Camera", new Vector2(ImGui.GetContentRegionAvail().X, 0)))
             {

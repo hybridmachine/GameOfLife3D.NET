@@ -11,6 +11,8 @@ using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.ImGui;
 using Silk.NET.Windowing;
 using System.Numerics;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace GameOfLife3D.NET;
 
@@ -83,7 +85,7 @@ public sealed class App : IDisposable
             float fontSize = 14.0f * _dpiScale;
             unsafe
             {
-                // Try to load a system font with good Unicode symbol coverage
+                // Load the primary system font with basic Unicode coverage
                 string? fontPath = FindSystemFont();
                 if (fontPath != null)
                 {
@@ -91,18 +93,10 @@ public sealed class App : IDisposable
                     config->OversampleH = 2;
                     config->OversampleV = 2;
 
-                    // Build glyph ranges: default + geometric shapes + misc symbols + arrows
                     var builder = new ImFontGlyphRangesBuilderPtr(ImGuiNative.ImFontGlyphRangesBuilder_ImFontGlyphRangesBuilder());
                     builder.AddRanges(io.Fonts.GetGlyphRangesDefault());
                     builder.AddChar((char)0x00B0); // °
                     builder.AddRange(0x2010, 0x2030); // General punctuation (–, —, etc.)
-                    builder.AddRange(0x2190, 0x21FF); // Arrows
-                    builder.AddRange(0x2500, 0x257F); // Box drawing
-                    builder.AddRange(0x2580, 0x259F); // Block elements
-                    builder.AddRange(0x25A0, 0x25FF); // Geometric shapes (▶◀◉▦ etc.)
-                    builder.AddRange(0x2600, 0x26FF); // Misc symbols (⚙ etc.)
-                    builder.AddRange(0x2700, 0x27BF); // Dingbats (❚ etc.)
-                    builder.AddRange(0x27C0, 0x27FF); // Supplemental arrows (⟳ etc.)
                     builder.BuildRanges(out var ranges);
 
                     io.Fonts.AddFontFromFileTTF(fontPath, fontSize, config, ranges.Data);
@@ -111,7 +105,6 @@ public sealed class App : IDisposable
                 }
                 else
                 {
-                    // Fallback to ImGui default font
                     var config = ImGuiNative.ImFontConfig_ImFontConfig();
                     config->SizePixels = fontSize;
                     config->OversampleH = 2;
@@ -119,6 +112,9 @@ public sealed class App : IDisposable
                     io.Fonts.AddFontDefault(config);
                     ImGuiNative.ImFontConfig_destroy(config);
                 }
+
+                // Merge Font Awesome icons into the font atlas
+                MergeIconFont(io, fontSize);
             }
         });
 
@@ -493,6 +489,40 @@ public sealed class App : IDisposable
         _imGuiController?.Dispose();
         _input?.Dispose();
         _gl?.Dispose();
+    }
+
+    private static unsafe void MergeIconFont(ImGuiIOPtr io, float fontSize)
+    {
+        byte[] fontData = LoadEmbeddedFont("fa-solid-900.ttf");
+        // Allocate unmanaged memory — ImGui atlas takes ownership
+        IntPtr fontPtr = Marshal.AllocHGlobal(fontData.Length);
+        Marshal.Copy(fontData, 0, fontPtr, fontData.Length);
+
+        var config = ImGuiNative.ImFontConfig_ImFontConfig();
+        config->MergeMode = 1;
+        config->OversampleH = 2;
+        config->OversampleV = 2;
+        config->GlyphMinAdvanceX = fontSize; // uniform icon width
+
+        // Font Awesome uses the Unicode Private Use Area
+        var builder = new ImFontGlyphRangesBuilderPtr(ImGuiNative.ImFontGlyphRangesBuilder_ImFontGlyphRangesBuilder());
+        builder.AddRange(0xF000, 0xF900);
+        builder.BuildRanges(out var ranges);
+
+        io.Fonts.AddFontFromMemoryTTF(fontPtr, fontData.Length, fontSize, config, ranges.Data);
+        builder.Destroy();
+        ImGuiNative.ImFontConfig_destroy(config);
+    }
+
+    private static byte[] LoadEmbeddedFont(string name)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        string fullName = $"GameOfLife3D.NET.Fonts.{name.Replace('/', '.').Replace('\\', '.')}";
+        using var stream = assembly.GetManifestResourceStream(fullName)
+            ?? throw new FileNotFoundException($"Embedded font not found: {fullName}");
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ms.ToArray();
     }
 
     private static string? FindSystemFont()

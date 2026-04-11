@@ -93,13 +93,13 @@ public sealed class TimelineBar
         float btnSize = 28;
         var btnSizeVec = new Vector2(btnSize, btnSize);
 
-        // Transport: Skip to start  (|◀)
-        if (TransportButton("|\u25C0", btnSizeVec, "First generation"))
+        // Transport: Skip to start
+        if (TransportButton(Icons.SkipBack, btnSizeVec, "First generation"))
             SeekEnd(0);
         ImGui.SameLine();
 
-        // Step back  (◀)
-        if (TransportButton("\u25C0", btnSizeVec, "Previous generation"))
+        // Step back
+        if (TransportButton(Icons.StepBack, btnSizeVec, "Previous generation"))
             SeekEnd(_endGeneration - 1);
         ImGui.SameLine();
 
@@ -110,7 +110,7 @@ public sealed class TimelineBar
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Theme.AccentDim);
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, Theme.Accent);
         }
-        string playIcon = _isPlaying ? "\u275A\u275A" : "\u25B6";  // ❚❚ or ▶
+        string playIcon = _isPlaying ? Icons.Pause : Icons.Play;
         string playTip = _isPlaying ? "Pause" : "Play";
         if (TransportButton(playIcon, btnSizeVec, playTip))
         {
@@ -121,13 +121,13 @@ public sealed class TimelineBar
             ImGui.PopStyleColor(3);
         ImGui.SameLine();
 
-        // Step forward  (▷)
-        if (TransportButton("\u25B7", btnSizeVec, "Next generation"))
+        // Step forward
+        if (TransportButton(Icons.StepForward, btnSizeVec, "Next generation"))
             SeekEnd(_endGeneration + 1);
         ImGui.SameLine();
 
-        // Skip to end  (▶|)
-        if (TransportButton("\u25B6|", btnSizeVec, "Last generation"))
+        // Skip to end
+        if (TransportButton(Icons.SkipForward, btnSizeVec, "Last generation"))
             SeekEnd(Math.Max(0, _totalGenerations - 1));
         ImGui.SameLine();
 
@@ -136,7 +136,7 @@ public sealed class TimelineBar
 
         // Reset
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
-        if (TransportButton("\u27F3", btnSizeVec, "Reset simulation"))
+        if (TransportButton(Icons.Reset, btnSizeVec, "Reset simulation"))
             ResetRequested?.Invoke();
         ImGui.PopStyleColor();
         ImGui.SameLine();
