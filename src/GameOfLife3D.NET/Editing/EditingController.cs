@@ -19,6 +19,7 @@ public sealed class EditingController
     private readonly GridRayCaster _rayCaster;
     private readonly CameraController _camera;
     private CameraState? _preEditCameraState;
+    private bool _preEditAutoOrbit;
 
     public bool IsActive { get; private set; }
     public int BrushSize { get; set; } = 1;
@@ -43,6 +44,7 @@ public sealed class EditingController
 
         // Save camera state and snap to top-down view for easy grid editing
         _preEditCameraState = _camera.GetState();
+        _preEditAutoOrbit = _camera.IsAutoOrbitEnabled;
         _camera.StopAutoOrbit();
         _camera.SetState(new CameraState
         {
@@ -66,6 +68,9 @@ public sealed class EditingController
             _camera.SetState(_preEditCameraState);
             _preEditCameraState = null;
         }
+
+        if (_preEditAutoOrbit)
+            _camera.StartAutoOrbit();
     }
 
     public void RotatePattern()

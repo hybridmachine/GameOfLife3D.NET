@@ -17,6 +17,7 @@ public sealed class CameraController
     private float _rotateSpeed = 0.01f;
     private float _moveSpeed = 0.5f;
     private bool _autoOrbitEnabled = true;
+    public bool IsAutoOrbitEnabled => _autoOrbitEnabled;
 
     // Input state
     private readonly HashSet<Key> _keysDown = new();

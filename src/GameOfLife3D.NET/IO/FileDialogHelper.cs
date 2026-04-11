@@ -13,7 +13,7 @@ public static class FileDialogHelper
             var result = Dialog.FileOpen(filter, defaultPath);
             return result.IsOk ? result.Path : null;
         }
-        catch (DllNotFoundException)
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 return MacOSOpenFile(filter);
@@ -28,7 +28,7 @@ public static class FileDialogHelper
             var result = Dialog.FileSave(filter, defaultPath);
             return result.IsOk ? result.Path : null;
         }
-        catch (DllNotFoundException)
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 return MacOSSaveFile(filter);
@@ -62,7 +62,6 @@ return POSIX path of chosenFile";
                 FileName = "osascript",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
@@ -74,7 +73,11 @@ return POSIX path of chosenFile";
             proc.StandardInput.Close();
 
             string output = proc.StandardOutput.ReadToEnd().Trim();
-            proc.WaitForExit();
+            if (!proc.WaitForExit(30_000))
+            {
+                proc.Kill();
+                return null;
+            }
 
             return proc.ExitCode == 0 && !string.IsNullOrEmpty(output) ? output : null;
         }
