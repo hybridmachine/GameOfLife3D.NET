@@ -884,6 +884,7 @@ public sealed class ImGuiUI
                         string content = File.ReadAllText(path);
                         var pattern = PatternLoader.ParseRLE(content);
                         _engine.InitializeFromPattern(pattern);
+                        _renderer.InvalidateState();
                         SyncDisplayRange();
                     }
                     catch (Exception ex)
