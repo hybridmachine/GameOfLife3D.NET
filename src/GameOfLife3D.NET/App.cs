@@ -152,7 +152,7 @@ public sealed class App : IDisposable
 
         // Initialize editing
         _rayCaster = new GridRayCaster();
-        _editController = new EditingController(_engine, _renderer, _rayCaster);
+        _editController = new EditingController(_engine, _renderer, _rayCaster, _camera);
 
         // Initialize UI
         _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _editController);
@@ -160,6 +160,7 @@ public sealed class App : IDisposable
         _ui.OnScreenshotRequested = TakeScreenshot;
         _ui.OnExportSTL = path => ExportModel(path, "stl");
         _ui.OnExportOBJ = path => ExportModel(path, "obj");
+        _ui.OnExportRLE = ExportRLE;
 
         // Initialize cinematic controller
         _cinematic = new CinematicController(_engine, _camera, _ui, _renderer);
@@ -313,7 +314,7 @@ public sealed class App : IDisposable
             if (_editController.IsActive)
                 _editController.Deactivate();
             else
-                _editController.TryActivate(_ui!.IsPlaying, _ui!.DisplayStart);
+                _editController.TryActivate(_ui!.IsPlaying, _ui!.DisplayStart, _engine!.GridSize);
         }
         _eWasDown = eDown;
 
@@ -455,6 +456,29 @@ public sealed class App : IDisposable
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Export failed: {ex.Message}");
+        }
+    }
+
+    private void ExportRLE(string path)
+    {
+        if (_engine == null) return;
+
+        try
+        {
+            var gen0 = _engine.GetGeneration(0);
+            if (gen0 == null)
+            {
+                Console.Error.WriteLine("Export failed: no generation 0");
+                return;
+            }
+
+            string rle = PatternLoader.ExportRLE(gen0.Cells, _engine.RuleString);
+            File.WriteAllText(path, rle);
+            Console.WriteLine($"Exported RLE to: {path}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"RLE export failed: {ex.Message}");
         }
     }
 

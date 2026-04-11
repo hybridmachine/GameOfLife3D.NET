@@ -123,6 +123,7 @@ public sealed class ImGuiUI
     // Export callbacks
     public Action<string>? OnExportSTL { get; set; }
     public Action<string>? OnExportOBJ { get; set; }
+    public Action<string>? OnExportRLE { get; set; }
 
     public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, EditingController? editController = null)
     {
@@ -823,7 +824,7 @@ public sealed class ImGuiUI
                 bool canEdit = !_isPlaying && _displayStart == 0;
                 if (!canEdit) ImGui.BeginDisabled();
                 if (UIHelpers.AccentButton("Enter Edit Mode", new Vector2(fullWidth, 0)))
-                    _editController.TryActivate(_isPlaying, _displayStart);
+                    _editController.TryActivate(_isPlaying, _displayStart, _engine.GridSize);
                 if (!canEdit)
                 {
                     ImGui.EndDisabled();
@@ -983,6 +984,21 @@ public sealed class ImGuiUI
                     OnExportOBJ?.Invoke(path);
             }
             UIHelpers.Tooltip("Export visible cubes as OBJ for Blender/etc.");
+
+            UIHelpers.ThinSeparator();
+
+            // Pattern Export
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Pattern Export");
+            ImGui.PopStyleColor();
+
+            if (ImGui.Button("Export RLE", new Vector2(btnWidth, 0)))
+            {
+                var path = FileDialogHelper.SaveFile("rle");
+                if (path != null)
+                    OnExportRLE?.Invoke(path);
+            }
+            UIHelpers.Tooltip("Export generation 0 pattern as RLE file");
         }
     }
 

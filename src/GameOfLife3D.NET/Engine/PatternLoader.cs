@@ -157,6 +157,97 @@ public sealed class PatternLoader
         return pattern;
     }
 
+    public static string ExportRLE(bool[,] grid, string ruleString)
+    {
+        int rows = grid.GetLength(0);
+        int cols = grid.GetLength(1);
+
+        // Find bounding box of live cells
+        int minRow = rows, maxRow = -1, minCol = cols, maxCol = -1;
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                if (grid[r, c])
+                {
+                    if (r < minRow) minRow = r;
+                    if (r > maxRow) maxRow = r;
+                    if (c < minCol) minCol = c;
+                    if (c > maxCol) maxCol = c;
+                }
+            }
+        }
+
+        // No live cells — produce minimal valid RLE
+        if (maxRow < 0)
+            return $"#C Exported from GameOfLife3D.NET\nx = 0, y = 0, rule = {ruleString}\n!\n";
+
+        int width = maxCol - minCol + 1;
+        int height = maxRow - minRow + 1;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("#C Exported from GameOfLife3D.NET");
+        sb.AppendLine($"x = {width}, y = {height}, rule = {ruleString}");
+
+        // Encode pattern data with run-length encoding
+        var line = new System.Text.StringBuilder();
+        int pendingNewlines = 0;
+
+        for (int r = minRow; r <= maxRow; r++)
+        {
+            // Flush pending empty rows as counted $
+            if (pendingNewlines > 0)
+            {
+                AppendRun(line, '$', pendingNewlines, sb);
+                pendingNewlines = 0;
+            }
+
+            // Run-length encode this row within the bounding box columns
+            int c = minCol;
+            while (c <= maxCol)
+            {
+                bool state = grid[r, c];
+                int count = 0;
+                while (c <= maxCol && grid[r, c] == state)
+                {
+                    count++;
+                    c++;
+                }
+
+                // Skip trailing dead cells at end of row
+                if (!state && c > maxCol)
+                    break;
+
+                AppendRun(line, state ? 'o' : 'b', count, sb);
+            }
+
+            // End of row (except last row, which ends with !)
+            if (r < maxRow)
+                pendingNewlines = 1;
+        }
+
+        // Flush remaining line content and terminate
+        if (line.Length > 0)
+            sb.Append(line);
+        sb.AppendLine("!");
+
+        return sb.ToString();
+    }
+
+    private static void AppendRun(System.Text.StringBuilder line, char tag, int count, System.Text.StringBuilder output)
+    {
+        string token = count > 1 ? $"{count}{tag}" : $"{tag}";
+
+        // Wrap lines at 70 characters
+        if (line.Length + token.Length > 70)
+        {
+            output.AppendLine(line.ToString());
+            line.Clear();
+        }
+
+        line.Append(token);
+    }
+
     public static bool ValidatePattern(bool[,]? pattern)
     {
         return pattern != null && pattern.GetLength(0) > 0 && pattern.GetLength(1) > 0;
