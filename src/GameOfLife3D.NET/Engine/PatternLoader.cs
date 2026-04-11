@@ -70,6 +70,79 @@ public sealed class PatternLoader
                 { false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
             },
             "Bill Gosper");
+
+        _builtIn["lwss"] = new PatternInfo("LWSS",
+            "A lightweight spaceship that travels horizontally",
+            new bool[,]
+            {
+                { false, true, false, false, true },
+                { true, false, false, false, false },
+                { true, false, false, false, true },
+                { true, true, true, true, false },
+            });
+
+        _builtIn["pentadecathlon"] = new PatternInfo("Pentadecathlon",
+            "A period 15 oscillator that appears to breathe",
+            new bool[,]
+            {
+                { true, true, true, true, true, true, true, true, true, true },
+            });
+
+        _builtIn["acorn"] = new PatternInfo("Acorn",
+            "A methuselah that takes 5206 generations to stabilize",
+            new bool[,]
+            {
+                { false, true, false, false, false, false, false },
+                { false, false, false, true, false, false, false },
+                { true, true, false, false, true, true, true },
+            });
+
+        _builtIn["diehard"] = new PatternInfo("Diehard",
+            "A methuselah that vanishes after 130 generations",
+            new bool[,]
+            {
+                { false, false, false, false, false, false, true, false },
+                { true, true, false, false, false, false, false, false },
+                { false, true, false, false, false, true, true, true },
+            });
+
+        _builtIn["koks-galaxy"] = new PatternInfo("Kok's Galaxy",
+            "A period 8 oscillator with rotating spiral arms",
+            new bool[,]
+            {
+                { true, true, false, true, true, true, true, true, true },
+                { true, true, false, true, true, true, true, true, true },
+                { true, true, false, false, false, false, false, false, false },
+                { true, true, false, false, false, false, false, true, true },
+                { false, false, false, false, false, false, false, false, false },
+                { true, true, false, false, false, false, false, true, true },
+                { false, false, false, false, false, false, false, true, true },
+                { true, true, true, true, true, true, false, true, true },
+                { true, true, true, true, true, true, false, true, true },
+            });
+
+        _builtIn["thunderbird"] = new PatternInfo("Thunderbird",
+            "A symmetric methuselah that stabilizes after 243 generations",
+            new bool[,]
+            {
+                { true, true, true },
+                { false, false, false },
+                { false, true, false },
+                { false, true, false },
+                { false, true, false },
+            });
+
+        _builtIn["figure-eight"] = new PatternInfo("Figure Eight",
+            "A period 8 oscillator made of two offset blocks",
+            new bool[,]
+            {
+                { true, true, true, false, false, false },
+                { true, true, true, false, false, false },
+                { true, true, true, false, false, false },
+                { false, false, false, true, true, true },
+                { false, false, false, true, true, true },
+                { false, false, false, true, true, true },
+            });
     }
 
     public bool[,]? GetBuiltInPattern(string name) =>
