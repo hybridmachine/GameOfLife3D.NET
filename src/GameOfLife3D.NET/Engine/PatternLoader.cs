@@ -147,11 +147,6 @@ public sealed class PatternLoader
                     return pattern;
             }
 
-            if (x >= width)
-            {
-                x = 0;
-                y++;
-            }
         }
 
         return pattern;
