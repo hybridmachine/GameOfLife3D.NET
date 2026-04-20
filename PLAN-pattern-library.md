@@ -13,8 +13,18 @@ Replace the current hand-coded list of ~5–12 built-in patterns (shown as flat 
 
 ### 1. Bundled pattern library
 - Add a `resources/patterns/` directory containing `.rle` files organized in subfolders by category: `oscillators/`, `spaceships/`, `guns/`, `methuselahs/`, `still-lifes/`, `puffers/`, `misc/`.
-- Seed with ~50–100 well-known patterns in the public domain (LifeWiki CC-BY-SA attribution file at `resources/patterns/ATTRIBUTION.md`).
 - Mark the folder as `CopyToOutputDirectory=PreserveNewest` in `GameOfLife3D.NET.csproj`.
+
+#### Licensing (must decide before seeding)
+Pattern files have varying provenance and the project must pick a single, consistent strategy. Two viable options:
+
+1. **Bundle CC-BY-SA content from LifeWiki/conwaylife.com.** This is the largest readily available source. Requires:
+   - The whole repository (or at minimum the redistributed files) to be compatibly licensed (CC-BY-SA 3.0 or a one-way-compatible license such as CC-BY-SA 4.0). The current repo `LICENSE` must be checked for compatibility before adopting this path.
+   - A `resources/patterns/ATTRIBUTION.md` listing each file's source URL, original author, and license.
+   - Per-file `#C` comment lines preserved with attribution inside the RLE itself.
+2. **Bundle only patterns that are public-domain or trivially re-creatable** (Conway's published patterns from 1970, simple still lifes, blinker, glider, etc. — generally treated as public domain or ineligible for copyright due to their triviality / age). Smaller seed set (~20–30 patterns). Avoids licensing friction entirely. Other patterns can still be loaded by the user via the existing RLE file import — just not bundled.
+
+**Recommendation: option 2 for the initial release** (no license entanglement, ships immediately), with option 1 deferred until the project's overall license is reviewed for CC-BY-SA compatibility. Update this plan once a decision is made.
 
 ### 2. Pattern metadata
 Create `Engine/PatternMetadata.cs`:
@@ -52,7 +62,7 @@ Keep the existing built-in category available as a quick-access pinned group abo
 - Add a recently-used list (last 8 patterns) persisted in `imgui.ini` or a new `library.state.json` under the user profile.
 
 ## Implementation steps
-1. Create `resources/patterns/` directory and add ~20 seed RLEs (copy from simple LifeWiki patterns; commit attribution file).
+1. Create `resources/patterns/` directory. Per the licensing decision in §1, seed with public-domain patterns only for the initial release (~20 RLEs: gliders, basic still lifes, blinker, pulsar, Gosper gun, etc.). Add `ATTRIBUTION.md` even when sources are public domain so future additions have a place to record provenance.
 2. Add `PatternMetadata` record.
 3. Extend `PatternLoader.ParseRLE()` to capture `#N`/`#O`/`#C` comments into an output metadata struct.
 4. Add `PatternLibrary` class with directory scan + search/filter methods.

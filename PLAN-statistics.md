@@ -1,13 +1,15 @@
 # Plan: Real-time Statistics & Periodicity Detection
 
 ## Goal
-Go beyond the single "CELLS" counter in the status bar. Give users live population graphs, periodicity detection (oscillator/still-life identification), per-generation bounding-box tracking, and a summary of "interesting" structures. Turn the tool into an analysis aid, not just a visualizer.
+Build on the existing population graph in the Statistics section to add periodicity detection (oscillator/still-life/spaceship identification), per-generation births/deaths tracking, bounding-box analysis, classification badges, and CSV export. Turn the tool into an analysis aid, not just a visualizer.
 
 ## Current State (reference)
 - Cell count displayed in `UI/StatusBar.cs` `Render()` (line 31), pulling `_renderer.GetVisibleCellCount()` (Rendering/Renderer3D.cs line 220).
-- `GameEngine.Generations` list (Engine/GameEngine.cs line 18) stores every computed generation as a `Generation` record holding `Index`, `Cells` (bool[,]), `LiveCells` (`List<Vector2Int>`).
+- A Statistics section already exists: `UI/ImGuiUI.cs` `RenderStatsSection()` (lines 571–610). It rebuilds a `_populationData` float[] each time `GenerationCount` changes, displays Current/Min/Max/Average labels, and renders a single `ImGui.PlotLines` population graph. No births/deaths, no bounding box, no classification.
+- `GameEngine.Generations` list (Engine/GameEngine.cs line 18) stores every computed generation as a `Generation` (sealed class — Engine/Generation.cs line 5) holding `Index`, `Cells` (`bool[,]`), and `LiveCells` (`IReadOnlyList<Vector2Int>`).
 - `GenerationCount` (line 17). Max generation cap is 1000.
-- No per-generation hash today; no history graph; no pattern classification.
+- Generations are appended via the private `GameEngine.AddGeneration(bool[,])` (line 188), called from `InitializeFromPattern`, `InitializeRandom`, `ComputeGenerations` (line 102), `ComputeSingleGeneration` (line 115), and `ImportState`. The per-step computation lives in private `ComputeNextGeneration(bool[,])` (line 199).
+- No per-generation hash today; no births/deaths tracking; no pattern classification.
 
 ## Design
 
@@ -23,7 +25,7 @@ public sealed record GenerationStats(
     ulong StateHash);     // 64-bit hash of (canonicalized) cell positions
 ```
 
-Compute inside `GameEngine.AdvanceGeneration()` (or wherever the new generation is appended) — all values derive from the cell array plus the previous generation. O(live cells) per generation, negligible overhead.
+Compute inside the private `GameEngine.AddGeneration(bool[,])` method (line 188) — the single chokepoint where every new generation is appended. All values derive from the cell array plus the previous generation. O(live cells) per generation, negligible overhead.
 
 **Hash function**: FNV-1a or xxHash over the sorted `(x, y)` live-cell pairs. Use raw positions (not translated) as a first pass; see §3 for translation-invariant hashing.
 
@@ -47,14 +49,15 @@ Compute two hashes per generation:
 
 O(live cells × 2) — still cheap for grids up to 200x200.
 
-### 4. UI: statistics panel
-Add a new collapsible ImGui window `UI/StatisticsPanel.cs` (shown when user clicks "Stats" in main panel):
+### 4. UI: extend the existing Statistics section
+Rework `ImGuiUI.RenderStatsSection()` (lines 571–610) in place rather than creating a separate window. The Current/Min/Max/Average labels and the existing `ImGui.PlotLines` population graph stay; replace the per-frame `_populationData` rebuild with a read of the new `_engine.Stats` list (avoids the existing O(N) rebuild on every generation change).
 
-1. **Population graph** — `ImGui.PlotLines()` of `LiveCount` across all computed generations. X-axis cursor marks the currently displayed generation.
-2. **Births/Deaths bars** — stacked bar chart (green births, red deaths) for the current visible range.
-3. **Bounding box** — shows width × height of the currently displayed generation, plus centroid.
-4. **Classification** — label showing detected type: "Still life", "Oscillator (period 2)", "Spaceship (period 4, heading ↗)", or "Evolving".
-5. **Export** — `Export CSV` button writing `gen, live, births, deaths, minX, minY, maxX, maxY, hash` to a user-chosen file (reuses NativeFileDialogSharp).
+Add the following new elements below the current population graph:
+
+1. **Births/Deaths plot** — second `ImGui.PlotLines` (or two stacked) showing per-generation births and deaths.
+2. **Bounding box** — `LabelValue` rows showing width × height and centroid of the currently displayed generation.
+3. **Classification** — colored label showing detected type: "Still life", "Oscillator (period 2)", "Spaceship (period 4, heading ↗)", or "Evolving".
+4. **Export** — `Export CSV` button writing `gen, live, births, deaths, minX, minY, maxX, maxY, hash` to a user-chosen file (reuses NativeFileDialogSharp).
 
 ### 5. Status bar addition
 Extend `UI/StatusBar.cs` to show a small classification badge next to the cell count:
@@ -71,10 +74,10 @@ This is a bonus — ship the panel/stats first.
 
 ## Implementation steps
 1. Add `GenerationStats` record.
-2. Extend `GameEngine.ComputeNext()` to emit a `GenerationStats` alongside each new `Generation`. Store in `_stats`.
+2. Add an `_stats` list on `GameEngine` and emit a `GenerationStats` from inside the existing private `AddGeneration(bool[,])` method (line 188) — the single chokepoint used by `InitializeFromPattern`, `InitializeRandom`, `ComputeGenerations`, `ComputeSingleGeneration`, and `ImportState`. Also clear `_stats` wherever `_generations.Clear()` is called (e.g. `SetGridSize`, `Clear`, and the gen-0 edit path in `SetCellInGen0`).
 3. Add FNV-1a hash helper in `Engine/Hashing.cs`.
 4. Add `PeriodicityDetector` called after each stats computation.
-5. Add `StatisticsPanel` ImGui window driven by `_engine.Stats`.
+5. Extend `ImGuiUI.RenderStatsSection()` (lines 571–610) with births/deaths plot, bounding box, classification label, and export button. Drive it from `_engine.Stats` instead of the current `_populationData` rebuild.
 6. Extend `StatusBar` with classification badge.
 7. Add CSV export via `IO/StatisticsExporter.cs`.
 8. (Phase 2) Cell-age tracking + heatmap shader variant.

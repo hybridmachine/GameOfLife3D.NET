@@ -5,8 +5,9 @@ Let users record the simulation as a video file (MP4 or WebM) with a custom came
 
 ## Current State (reference)
 - Frame loop: `App.OnRender()` (src/GameOfLife3D.NET/App.cs, lines 222–276) drives each frame — updates camera, calls `_renderer.UpdateGenerations()` (264), `_renderer.Render()` (271), then ImGui.
-- Post-process pipeline already renders to an FBO: `Rendering/PostProcessPipeline.cs` + `BloomEffect.cs`.
-- Screenshot capture: `IO/ScreenshotCapture.cs` reads the framebuffer, encodes PNG with a custom zlib encoder (`SaveToDesktop()` line 13, `WritePng()` line 27). Triggered from `App.TakeScreenshot()` (F12 / UI button).
+- Post-process pipeline already renders to an FBO: `Rendering/PostProcessPipeline.cs` + `BloomEffect.cs`. The scene FBO is created at line 113 (`_sceneFbo`) and bound for the main scene draw at line 143. `EndSceneAndComposite()` (line 167) applies bloom and writes the final composited image to the default framebuffer.
+- Framebuffer readback lives in `PostProcessPipeline.ReadPixels()` (line 226). Important: it binds `_sceneFbo` and reads RGBA bytes from the **pre-composite** scene texture — bloom/tonemap from `EndSceneAndComposite` are NOT included. Used today only for screenshots, where this limitation is currently accepted.
+- Screenshot encoding: `IO/ScreenshotCapture.cs` only encodes/writes PNG (custom zlib encoder, `SaveToDesktop()` line 13, `WritePng()` line 27). It does not perform the GL readback itself — it receives a pre-read RGBA byte array from `App.TakeScreenshot()` (F12 / UI button), which calls `PostProcessPipeline.ReadPixels()`.
 - Camera keyframes already exist:
   - `Camera/FlythroughPath.cs` line 5 — holds `PositionWaypoints`, `LookAtWaypoints`, `TotalDuration`.
   - `Camera/CatmullRomSpline.cs` — cubic interpolation.
@@ -18,9 +19,11 @@ Let users record the simulation as a video file (MP4 or WebM) with a custom came
 
 ### 1. Frame source
 Add `IO/VideoFrameCapturer.cs`:
-- Wraps the existing FBO read-back used by `ScreenshotCapture`.
 - Exposes `byte[] CaptureBgraFrame(out int width, out int height)` — BGRA layout (preferred by most encoders).
-- Reuses the PostProcessPipeline's color attachment so bloom/tonemap are baked into frames.
+- Captures the **post-composite** image (with bloom + tonemap applied), not the pre-bloom scene FBO that today's `PostProcessPipeline.ReadPixels()` reads from. Two viable approaches:
+  1. **Add a "final" FBO**: extend `PostProcessPipeline` so `EndSceneAndComposite()` writes into a dedicated `_finalFbo` (in addition to or instead of the default framebuffer). Add a `ReadFinalPixels()` accessor parallel to `ReadPixels()`. The default framebuffer can then be blit/composited from `_finalFbo` for on-screen display. Cleanest option.
+  2. **Read from the default framebuffer**: call `glReadPixels` against the back buffer right after `EndSceneAndComposite()` and before ImGui composites its overlay. Simpler but couples capture timing to the frame loop.
+- Recommendation: option 1. It also fixes the existing screenshot limitation (today's screenshots don't include bloom because `ReadPixels` samples `_sceneFbo`); migrating screenshot capture to the new path is a small bonus.
 
 ### 2. Deterministic rendering
 Normal frame loop is vsync-bound real time. For recording, the app must advance time in fixed increments matching the video frame rate.
@@ -83,7 +86,7 @@ App.OnRender() (recording mode):
 ```
 
 ## Implementation steps
-1. Extract shared FBO read-back helper from `ScreenshotCapture` into `IO/FramebufferReader.cs`; have both screenshot + recording use it.
+1. Extend `PostProcessPipeline` so `EndSceneAndComposite()` writes the final composited image to a new `_finalFbo` (color attachment kept around between frames). Add `ReadFinalPixels()` parallel to the existing `ReadPixels()` (line 226). Migrate `App.TakeScreenshot()` to use `ReadFinalPixels()` so screenshots also get bloom/tonemap.
 2. Add `CameraKeyframe` + `FlythroughPath.FromKeyframes()`.
 3. Add `RecordingClock` and plumb deterministic delta-time into `App.OnRender()`.
 4. Add `PngSequenceWriter` (reuses existing PNG encoder) — ship this as MVP.
