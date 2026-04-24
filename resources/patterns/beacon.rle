@@ -1,0 +1,7 @@
+#N Beacon
+#C A period-2 oscillator made of two offset blocks.
+#C Published by John Conway (1970).
+#C category: oscillators
+#C period: 2
+x = 4, y = 4, rule = B3/S23
+2o2b$2o2b$2b2o$2b2o!

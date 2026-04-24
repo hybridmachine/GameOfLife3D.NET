@@ -1,0 +1,5 @@
+#N Diehard
+#C A methuselah that vanishes completely after 130 generations.
+#C category: methuselahs
+x = 8, y = 3, rule = B3/S23
+6bob$2o6b$bo3b3o!

@@ -1,0 +1,6 @@
+#N Tub
+#C A four-cell still life. Published by John Conway (1970).
+#C category: still-lifes
+#C period: 1
+x = 3, y = 3, rule = B3/S23
+bo$obo$bo!

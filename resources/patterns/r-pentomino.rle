@@ -1,0 +1,6 @@
+#N R-pentomino
+#C A methuselah that stabilizes after 1103 generations.
+#C Published by John Conway (1970).
+#C category: methuselahs
+x = 3, y = 3, rule = B3/S23
+b2o$2ob$bo!

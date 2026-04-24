@@ -1,0 +1,6 @@
+#N Toad
+#C A period-2 oscillator. Published by John Conway (1970).
+#C category: oscillators
+#C period: 2
+x = 4, y = 2, rule = B3/S23
+b3o$3o!

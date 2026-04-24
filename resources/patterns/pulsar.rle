@@ -1,0 +1,6 @@
+#N Pulsar
+#C A period-3 oscillator. Published by John Conway (1970).
+#C category: oscillators
+#C period: 3
+x = 13, y = 13, rule = B3/S23
+2b3o3b3o2b$13b$o4bobo4bo$o4bobo4bo$o4bobo4bo$2b3o3b3o2b$13b$2b3o3b3o2b$o4bobo4bo$o4bobo4bo$o4bobo4bo$13b$2b3o3b3o2b!

@@ -157,13 +157,71 @@ public sealed class PatternLoader
 
     public static bool[,] ParseRLE(string rleContent)
     {
+        var result = ParseRLEWithHeader(rleContent);
+        return result.Pattern;
+    }
+
+    /// <summary>
+    /// Header information captured from an RLE file. All fields are best-effort
+    /// and may be null when the source file omits the corresponding comment line.
+    /// </summary>
+    public sealed record RleHeader(
+        int Width,
+        int Height,
+        string? Name,
+        string? Author,
+        string? Category,
+        int? Period,
+        string? Description);
+
+    /// <summary>
+    /// Parses an RLE file into a cell grid plus the metadata recovered from its
+    /// header comments. Recognizes #N (name), #O (author), and #C (comment).
+    /// Two special #C conventions are supported:
+    ///   "#C category: X"  → categorizes the pattern (oscillators, spaceships, etc.)
+    ///   "#C period: N"    → records the oscillator/spaceship period
+    /// Any other #C lines are concatenated into the description.
+    /// </summary>
+    public static (bool[,] Pattern, RleHeader Header) ParseRLEWithHeader(string rleContent)
+    {
         var lines = rleContent.Split('\n').Select(l => l.Trim()).ToList();
 
         int width = 0, height = 0;
+        string? name = null;
+        string? author = null;
+        string? category = null;
+        int? period = null;
+        var descriptionLines = new List<string>();
 
         foreach (var line in lines)
         {
-            if (line.StartsWith("x ", StringComparison.OrdinalIgnoreCase))
+            if (line.StartsWith("#N ", StringComparison.Ordinal) || line == "#N")
+            {
+                name = line.Length > 3 ? line[3..].Trim() : null;
+            }
+            else if (line.StartsWith("#O ", StringComparison.Ordinal) || line == "#O")
+            {
+                author = line.Length > 3 ? line[3..].Trim() : null;
+            }
+            else if (line.StartsWith("#C ", StringComparison.Ordinal) || line == "#C")
+            {
+                string content = line.Length > 3 ? line[3..].Trim() : "";
+                if (content.StartsWith("category:", StringComparison.OrdinalIgnoreCase))
+                {
+                    category = content["category:".Length..].Trim().ToLowerInvariant();
+                }
+                else if (content.StartsWith("period:", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(content["period:".Length..].Trim(), out int p))
+                        period = p;
+                }
+                else if (!string.IsNullOrEmpty(content))
+                {
+                    descriptionLines.Add(content);
+                }
+            }
+            else if (line.StartsWith("x ", StringComparison.OrdinalIgnoreCase)
+                  || line.StartsWith("x=", StringComparison.OrdinalIgnoreCase))
             {
                 var match = System.Text.RegularExpressions.Regex.Match(line,
                     @"x\s*=\s*(\d+),\s*y\s*=\s*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -182,6 +240,7 @@ public sealed class PatternLoader
         var rleData = string.Concat(lines.Where(l =>
             !l.StartsWith('#') &&
             !l.StartsWith("x ", StringComparison.OrdinalIgnoreCase) &&
+            !l.StartsWith("x=", StringComparison.OrdinalIgnoreCase) &&
             l.Length > 0));
 
         var pattern = new bool[height, width];
@@ -217,12 +276,69 @@ public sealed class PatternLoader
                     x = 0;
                     break;
                 case '!':
-                    return pattern;
+                    goto done;
             }
-
         }
 
-        return pattern;
+        done:
+        string? description = descriptionLines.Count > 0 ? string.Join(" ", descriptionLines) : null;
+        return (pattern, new RleHeader(width, height, name, author, category, period, description));
+    }
+
+    /// <summary>
+    /// Parses only the header of an RLE file without decoding the cell grid.
+    /// Used by PatternLibrary to build the index cheaply at startup.
+    /// </summary>
+    public static RleHeader ParseRleHeaderOnly(string rleContent)
+    {
+        var lines = rleContent.Split('\n').Select(l => l.Trim()).ToList();
+
+        int width = 0, height = 0;
+        string? name = null;
+        string? author = null;
+        string? category = null;
+        int? period = null;
+        var descriptionLines = new List<string>();
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("#N ", StringComparison.Ordinal))
+            {
+                name = line[3..].Trim();
+            }
+            else if (line.StartsWith("#O ", StringComparison.Ordinal))
+            {
+                author = line[3..].Trim();
+            }
+            else if (line.StartsWith("#C ", StringComparison.Ordinal))
+            {
+                string content = line[3..].Trim();
+                if (content.StartsWith("category:", StringComparison.OrdinalIgnoreCase))
+                    category = content["category:".Length..].Trim().ToLowerInvariant();
+                else if (content.StartsWith("period:", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(content["period:".Length..].Trim(), out int p))
+                        period = p;
+                }
+                else if (!string.IsNullOrEmpty(content))
+                    descriptionLines.Add(content);
+            }
+            else if (line.StartsWith("x ", StringComparison.OrdinalIgnoreCase)
+                  || line.StartsWith("x=", StringComparison.OrdinalIgnoreCase))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(line,
+                    @"x\s*=\s*(\d+),\s*y\s*=\s*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    width = int.Parse(match.Groups[1].Value);
+                    height = int.Parse(match.Groups[2].Value);
+                }
+                break;
+            }
+        }
+
+        string? description = descriptionLines.Count > 0 ? string.Join(" ", descriptionLines) : null;
+        return new RleHeader(width, height, name, author, category, period, description);
     }
 
     public static string ExportRLE(bool[,] grid, string ruleString)

@@ -1,0 +1,7 @@
+#N Blinker
+#C The smallest and simplest period-2 oscillator.
+#C Published by John Conway (1970).
+#C category: oscillators
+#C period: 2
+x = 3, y = 1, rule = B3/S23
+3o!

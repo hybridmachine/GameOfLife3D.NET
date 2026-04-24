@@ -25,6 +25,7 @@ public sealed class App : IDisposable
 
     private GameEngine? _engine;
     private PatternLoader? _patternLoader;
+    private PatternLibrary? _patternLibrary;
     private Renderer3D? _renderer;
     private CameraController? _camera;
     private ImGuiUI? _ui;
@@ -127,6 +128,7 @@ public sealed class App : IDisposable
         // Initialize engine
         _engine = new GameEngine(50);
         _patternLoader = new PatternLoader();
+        _patternLibrary = new PatternLibrary();
 
         // Load default pattern and compute some generations
         var pattern = _patternLoader.GetBuiltInPattern("r-pentomino");
@@ -155,7 +157,7 @@ public sealed class App : IDisposable
         _editController = new EditingController(_engine, _renderer, _rayCaster, _camera);
 
         // Initialize UI
-        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _editController);
+        _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _patternLibrary, _editController);
         _ui.SyncDisplayRange();
         _ui.OnScreenshotRequested = TakeScreenshot;
         _ui.OnExportSTL = path => ExportModel(path, "stl");

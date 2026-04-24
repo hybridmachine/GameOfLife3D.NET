@@ -1,0 +1,7 @@
+#N Lightweight spaceship
+#C A period-4 spaceship that travels horizontally.
+#C Discovered by John Conway (1970).
+#C category: spaceships
+#C period: 4
+x = 5, y = 4, rule = B3/S23
+bo2bo$o4b$o3bo$4o!

@@ -14,9 +14,19 @@ public sealed class ImGuiUI
     private readonly Renderer3D _renderer;
     private readonly CameraController _camera;
     private readonly PatternLoader _patternLoader;
+    private readonly PatternLibrary _patternLibrary;
+    private readonly PatternLibraryState _patternLibState;
     private readonly EditingController? _editController;
     private readonly TimelineBar _timeline;
     private readonly StatusBar _statusBar;
+
+    // Pattern library UI state
+    private string _patternSearch = "";
+    private int _patternCategoryIdx;
+    private int _patternPeriodMin;
+    private int _patternPeriodMax = 32;
+    private int _patternMaxSize = 200;
+    private string? _selectedPatternId;
 
     // UI state
     private int _selectedGridSizeIdx = 2; // 50
@@ -125,15 +135,25 @@ public sealed class ImGuiUI
     public Action<string>? OnExportOBJ { get; set; }
     public Action<string>? OnExportRLE { get; set; }
 
-    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, EditingController? editController = null)
+    public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, PatternLibrary patternLibrary, EditingController? editController = null)
     {
         _engine = engine;
         _renderer = renderer;
         _camera = camera;
         _patternLoader = patternLoader;
+        _patternLibrary = patternLibrary;
+        _patternLibState = PatternLibraryState.Load();
         _editController = editController;
         _timeline = new TimelineBar();
         _statusBar = new StatusBar();
+
+        // Restore last-used category if it still exists in the library
+        if (_patternLibState.LastCategory != null)
+        {
+            int idx = _patternLibrary.Categories.ToList().FindIndex(c =>
+                string.Equals(c, _patternLibState.LastCategory, StringComparison.OrdinalIgnoreCase));
+            if (idx >= 0) _patternCategoryIdx = idx + 1; // +1 for "All" at index 0
+        }
 
         // Sync initial state from render settings
         var settings = renderer.Settings;
@@ -611,38 +631,163 @@ public sealed class ImGuiUI
 
     private void RenderPatternSection()
     {
-        if (UIHelpers.SectionHeader(Icons.Grid, "Patterns"))
+        if (!UIHelpers.SectionHeader(Icons.Grid, "Patterns"))
+            return;
+
+        float fullWidth = ImGui.GetContentRegionAvail().X;
+
+        // ── Recently used (pinned above the search UI) ──
+        if (_patternLibState.RecentIds.Count > 0)
         {
-            float fullWidth = ImGui.GetContentRegionAvail().X;
-            float spacing = ImGui.GetStyle().ItemSpacing.X;
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Recent");
+            ImGui.PopStyleColor();
 
-            // Render pattern buttons flowing across available width
             float currentX = 0;
-            foreach (var kvp in _patternLoader.GetBuiltInPatternMap())
+            float spacing = ImGui.GetStyle().ItemSpacing.X;
+            foreach (var recentId in _patternLibState.RecentIds)
             {
-                float btnWidth = ImGui.CalcTextSize(kvp.Value.Name).X + ImGui.GetStyle().FramePadding.X * 2;
+                var metadata = _patternLibrary.Get(recentId);
+                if (metadata == null) continue;
 
-                // Wrap to next line if this button wouldn't fit
+                float btnWidth = ImGui.CalcTextSize(metadata.Name).X + ImGui.GetStyle().FramePadding.X * 2;
                 if (currentX > 0 && currentX + btnWidth > fullWidth)
-                {
                     currentX = 0;
-                }
                 else if (currentX > 0)
-                {
                     ImGui.SameLine();
-                }
 
-                if (ImGui.Button(kvp.Value.Name))
-                {
-                    _engine.InitializeFromPattern(kvp.Value.Pattern);
-                    _renderer.InvalidateState();
-                    SyncDisplayRange();
-                }
-                UIHelpers.Tooltip(kvp.Value.Description);
+                if (ImGui.Button($"{metadata.Name}##recent-{metadata.Id}"))
+                    LoadPattern(metadata.Id);
 
                 currentX += btnWidth + spacing;
             }
+
+            UIHelpers.ThinSeparator();
         }
+
+        // ── Search + filters ──
+        ImGui.SetNextItemWidth(fullWidth);
+        ImGui.InputTextWithHint("##pattern-search", "Search patterns...", ref _patternSearch, 64);
+
+        // Category dropdown (All + unique categories from library)
+        var categories = _patternLibrary.Categories;
+        string[] categoryLabels = new string[categories.Count + 1];
+        categoryLabels[0] = "All categories";
+        for (int i = 0; i < categories.Count; i++)
+            categoryLabels[i + 1] = ToTitleCase(categories[i]);
+
+        ImGui.SetNextItemWidth(fullWidth);
+        if (ImGui.Combo("##pattern-cat", ref _patternCategoryIdx, categoryLabels, categoryLabels.Length))
+        {
+            _patternLibState.LastCategory = _patternCategoryIdx > 0 ? categories[_patternCategoryIdx - 1] : null;
+            _patternLibState.Save();
+        }
+
+        ImGui.SetNextItemWidth(fullWidth * 0.48f);
+        ImGui.SliderInt("##pat-period-min", ref _patternPeriodMin, 0, 32, "Period ≥ %d");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(fullWidth * 0.48f);
+        ImGui.SliderInt("##pat-period-max", ref _patternPeriodMax, 0, 32, "Period ≤ %d");
+        if (_patternPeriodMin > _patternPeriodMax)
+            _patternPeriodMax = _patternPeriodMin;
+
+        ImGui.SetNextItemWidth(fullWidth);
+        ImGui.SliderInt("##pat-max-size", ref _patternMaxSize, 3, 200, "Max size: %d cells");
+
+        UIHelpers.ThinSeparator();
+
+        // ── Results list ──
+        string? activeCategory = _patternCategoryIdx > 0 ? categories[_patternCategoryIdx - 1] : null;
+        int? periodMin = _patternPeriodMin > 0 ? _patternPeriodMin : null;
+        int? periodMax = _patternPeriodMax < 32 ? _patternPeriodMax : null;
+        int? maxSize = _patternMaxSize < 200 ? _patternMaxSize : null;
+
+        var results = _patternLibrary.Search(
+            query: _patternSearch,
+            category: activeCategory,
+            periodMin: periodMin,
+            periodMax: periodMax,
+            maxSize: maxSize).ToList();
+
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgSurface);
+        ImGui.BeginChild("##pat-results", new Vector2(fullWidth, 160), ImGuiChildFlags.Border);
+
+        if (results.Count == 0)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+            ImGui.Text("No patterns match.");
+            ImGui.PopStyleColor();
+        }
+        else
+        {
+            foreach (var p in results)
+            {
+                bool isSelected = p.Id == _selectedPatternId;
+                string label = p.Period.HasValue
+                    ? $"{p.Name}  ({p.Width}×{p.Height}, p{p.Period})"
+                    : $"{p.Name}  ({p.Width}×{p.Height})";
+
+                if (ImGui.Selectable($"{label}##sel-{p.Id}", isSelected))
+                    _selectedPatternId = p.Id;
+
+                if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                    LoadPattern(p.Id);
+            }
+        }
+
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
+
+        // ── Preview + Load ──
+        var selected = _selectedPatternId != null ? _patternLibrary.Get(_selectedPatternId) : null;
+        if (selected != null)
+        {
+            UIHelpers.ThinSeparator();
+
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text(selected.Category);
+            ImGui.PopStyleColor();
+
+            ImGui.Text(selected.Name);
+            if (selected.Author != null)
+                UIHelpers.LabelValue("Author:", selected.Author);
+            if (selected.Description != null)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+                ImGui.TextWrapped(selected.Description);
+                ImGui.PopStyleColor();
+            }
+
+            var preview = _patternLibrary.GetPattern(selected.Id);
+            PatternPreview.Draw(preview, new Vector2(fullWidth, 100));
+
+            if (UIHelpers.AccentButton("Load pattern", new Vector2(fullWidth, 0)))
+                LoadPattern(selected.Id);
+        }
+    }
+
+    private void LoadPattern(string id)
+    {
+        var pattern = _patternLibrary.GetPattern(id);
+        if (pattern == null) return;
+
+        _engine.InitializeFromPattern(pattern);
+        _renderer.InvalidateState();
+        SyncDisplayRange();
+        _selectedPatternId = id;
+        _patternLibState.MarkUsed(id);
+    }
+
+    private static string ToTitleCase(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        var parts = s.Split('-', '_');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (parts[i].Length == 0) continue;
+            parts[i] = char.ToUpperInvariant(parts[i][0]) + parts[i][1..];
+        }
+        return string.Join(' ', parts);
     }
 
     private void RenderVisualSection()

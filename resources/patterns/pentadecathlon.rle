@@ -1,0 +1,7 @@
+#N Pentadecathlon
+#C A period-15 oscillator (evolves from a row of 10 live cells).
+#C Discovered by John Conway (1970).
+#C category: oscillators
+#C period: 15
+x = 10, y = 1, rule = B3/S23
+10o!

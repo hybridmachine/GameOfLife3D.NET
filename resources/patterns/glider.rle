@@ -1,0 +1,7 @@
+#N Glider
+#C A period-4 spaceship that travels diagonally.
+#C Discovered by Richard Guy (1969), published by John Conway (1970).
+#C category: spaceships
+#C period: 4
+x = 3, y = 3, rule = B3/S23
+bob$2bo$3o!
