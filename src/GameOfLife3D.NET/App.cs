@@ -2,6 +2,7 @@ using GameOfLife3D.NET.Camera;
 using GameOfLife3D.NET.Editing;
 using GameOfLife3D.NET.Engine;
 using GameOfLife3D.NET.IO;
+using GameOfLife3D.NET.Recording;
 using GameOfLife3D.NET.Rendering;
 using GameOfLife3D.NET.UI;
 using ImGuiNET;
@@ -50,6 +51,10 @@ public sealed class App : IDisposable
     private CinematicController? _cinematic;
     private bool _pWasDown;
     private bool _escCinematicWasDown;
+
+    // Video recording
+    private RecordingController? _recording;
+    private RecordingPanel? _recordingPanel;
 
     public void Run()
     {
@@ -167,6 +172,38 @@ public sealed class App : IDisposable
         // Initialize cinematic controller
         _cinematic = new CinematicController(_engine, _camera, _ui, _renderer);
 
+        // Initialize video recording
+        _recording = new RecordingController();
+        _recordingPanel = new RecordingPanel
+        {
+            CurrentCameraStateProvider = () => _camera!.GetState(),
+            FramebufferSizeProvider = () => (_window!.FramebufferSize.X, _window.FramebufferSize.Y),
+            Controller = _recording,
+        };
+        _recordingPanel.OnStartRecording = (settings, keyframes) =>
+        {
+            try
+            {
+                if (_cinematic?.IsActive == true)
+                {
+                    _cinematic.Stop();
+                    _ui!.IsCinematicModeActive = false;
+                }
+                // Force capture dimensions to match the live composite FBO — the resolution
+                // dropdown is informational; actually resizing the render target is a future step.
+                int fbW = _renderer!.PostProcess!.Width;
+                int fbH = _renderer.PostProcess.Height;
+                _recording.Begin(settings with { Width = fbW, Height = fbH }, keyframes, _camera!, _engine!, _ui!);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to start recording: {ex.Message}");
+                _recordingPanel.LastErrorMessage = ex.Message;
+            }
+        };
+        _recordingPanel.OnCancelRecording = () => _recording.Cancel();
+        _ui.OnOpenRecordingPanel = () => _recordingPanel!.Visible = true;
+
         // Wire mouse clicks for editing
         foreach (var mouse in _input.Mice)
         {
@@ -226,40 +263,62 @@ public sealed class App : IDisposable
         if (_gl == null || _engine == null || _renderer == null || _camera == null || _ui == null || _imGuiController == null)
             return;
 
-        double currentTime = _window!.Time;
+        bool recording = _recording?.IsActive == true;
+        double frameDelta = recording ? _recording!.Clock.FrameDelta : deltaTime;
+        double currentTime = recording ? _recording!.CurrentRecordingTime : _window!.Time;
 
         // Update ImGui
-        _imGuiController.Update((float)deltaTime);
+        _imGuiController.Update((float)frameDelta);
 
-        // Check ImGui capture state
+        // Check ImGui capture state. During recording, suppress ImGui input capture so the camera
+        // path drives unimpeded — the only ImGui surface allowed is the recording overlay.
         var io = ImGui.GetIO();
-        _camera.SetImGuiCapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
-
-        // Handle cinematic mode shortcuts (always active, even during WantCaptureKeyboard)
-        HandleCinematicShortcuts(currentTime);
-
-        // Handle keyboard shortcuts (blocked during cinematic mode)
-        if (!io.WantCaptureKeyboard && !(_cinematic?.IsActive ?? false))
+        if (recording)
         {
-            HandleKeyboardShortcuts();
+            _camera.SetImGuiCapture(false, false);
         }
         else
         {
-            _spaceWasDown = false;
-            _f12WasDown = false;
-            _eWasDown = false;
-            _leftBracketWasDown = false;
-            _rightBracketWasDown = false;
-            _rWasDown = false;
-            _escWasDown = false;
-            _zeroWasDown = false;
-            _fWasDown = false;
+            _camera.SetImGuiCapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
+        }
+
+        if (!recording)
+        {
+            // Handle cinematic mode shortcuts (always active, even during WantCaptureKeyboard)
+            HandleCinematicShortcuts(currentTime);
+
+            // Handle keyboard shortcuts (blocked during cinematic mode)
+            if (!io.WantCaptureKeyboard && !(_cinematic?.IsActive ?? false))
+            {
+                HandleKeyboardShortcuts();
+            }
+            else
+            {
+                _spaceWasDown = false;
+                _f12WasDown = false;
+                _eWasDown = false;
+                _leftBracketWasDown = false;
+                _rightBracketWasDown = false;
+                _rWasDown = false;
+                _escWasDown = false;
+                _zeroWasDown = false;
+                _fWasDown = false;
+            }
         }
 
         // Update systems
-        _camera.Update((float)deltaTime);
-        _ui.Tick(currentTime);
-        _cinematic?.Update(currentTime);
+        if (recording)
+        {
+            _recording!.Tick();           // advances generation scrub
+            _camera.Update((float)frameDelta);
+            // Skip _ui.Tick (no playback) and _cinematic.Update (mutually exclusive with recording).
+        }
+        else
+        {
+            _camera.Update((float)frameDelta);
+            _ui.Tick(currentTime);
+            _cinematic?.Update(currentTime);
+        }
         _ui.StatusBar.UpdateFPS(currentTime);
 
         // Update renderer with current generations
@@ -268,12 +327,38 @@ public sealed class App : IDisposable
         // Render
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix;
-        var fbSize = _window.FramebufferSize;
+        var fbSize = _window!.FramebufferSize;
         var logicalSize = _window.Size;
         _renderer.Render(view, proj, fbSize.X, fbSize.Y, currentTime, logicalSize.X, logicalSize.Y);
 
-        // Render ImGui UI (uses logical pixel coordinates)
-        _ui.Render(logicalSize.X, logicalSize.Y);
+        // CAPTURE — must happen after EndSceneAndComposite (post-bloom) and before any ImGui draw.
+        if (recording)
+        {
+            try
+            {
+                var pixels = _renderer.PostProcess!.ReadFinalPixels();
+                _recording!.WriteFrame(pixels);
+                _recording.AdvanceFrame();
+                if (_recording.IsComplete)
+                {
+                    _recording.Finish();
+                    Console.WriteLine($"Recording complete: {_recording.Settings?.OutputPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Recording frame failed: {ex.Message}");
+                _recording?.Cancel();
+            }
+        }
+
+        // Render ImGui UI (suppress main panel during recording when HUD is hidden)
+        bool hideHud = recording && (_recording!.Settings?.HideHud ?? true);
+        if (!hideHud)
+        {
+            _ui.Render(logicalSize.X, logicalSize.Y);
+        }
+        _recordingPanel?.Render(logicalSize.X, logicalSize.Y);
         _imGuiController.Render();
     }
 
@@ -490,7 +575,7 @@ public sealed class App : IDisposable
 
         try
         {
-            var pixels = _renderer.PostProcess.ReadPixels();
+            var pixels = _renderer.PostProcess.ReadFinalPixels();
             string path = ScreenshotCapture.SaveToDesktop(pixels, _renderer.PostProcess.Width, _renderer.PostProcess.Height);
             Console.WriteLine($"Screenshot saved: {path}");
         }
@@ -502,6 +587,14 @@ public sealed class App : IDisposable
 
     private void OnResize(Vector2D<int> size)
     {
+        // Resizing the framebuffer mid-recording would change the encoder's expected dimensions.
+        // Cancel cleanly rather than corrupt the stream.
+        if (_recording?.IsActive == true)
+        {
+            Console.Error.WriteLine("Window resized during recording — cancelling.");
+            _recording.Cancel();
+        }
+
         _gl?.Viewport(size);
         if (_camera != null && size.X > 0 && size.Y > 0)
             _camera.AspectRatio = (float)size.X / size.Y;

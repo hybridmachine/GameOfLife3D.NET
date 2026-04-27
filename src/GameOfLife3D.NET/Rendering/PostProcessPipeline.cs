@@ -7,10 +7,15 @@ public sealed class PostProcessPipeline : IDisposable
 {
     private readonly GL _gl;
 
-    // Scene FBO
+    // Scene FBO (HDR, pre-bloom)
     private uint _sceneFbo;
     private uint _sceneColorTexture;
     private uint _sceneDepthRbo;
+
+    // Composite FBO (RGBA8, post-bloom — what user sees on screen, what video/screenshot captures)
+    private uint _compositeFbo;
+    private uint _compositeColorTexture;
+
     private int _width;
     private int _height;
 
@@ -37,6 +42,7 @@ public sealed class PostProcessPipeline : IDisposable
 
         CreateQuad();
         CreateSceneFBO(width, height);
+        CreateCompositeFBO(width, height);
 
         _compositeShader = ShaderProgram.FromEmbeddedResources(_gl, "postprocess.vert", "postprocess.frag");
         _backgroundShader = ShaderProgram.FromEmbeddedResources(_gl, "postprocess.vert", "background.frag");
@@ -124,6 +130,33 @@ public sealed class PostProcessPipeline : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
+    private void CreateCompositeFBO(int width, int height)
+    {
+        // RGBA8 — readback target. No depth needed; composite is a fullscreen quad.
+        _compositeColorTexture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _compositeColorTexture);
+        unsafe
+        {
+            _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8,
+                (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, null);
+        }
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+        _compositeFbo = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo);
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D, _compositeColorTexture, 0);
+
+        var status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (status != GLEnum.FramebufferComplete)
+            Console.Error.WriteLine($"Composite FBO incomplete: {status}");
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+    }
+
     public void Resize(int width, int height)
     {
         if (width == _width && height == _height) return;
@@ -133,6 +166,7 @@ public sealed class PostProcessPipeline : IDisposable
         // Recreate textures at new size
         DeleteFBOResources();
         CreateSceneFBO(width, height);
+        CreateCompositeFBO(width, height);
     }
 
     public void BeginScene(
@@ -166,12 +200,7 @@ public sealed class PostProcessPipeline : IDisposable
 
     public void EndSceneAndComposite(BloomEffect? bloom, RenderSettings settings)
     {
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-        _gl.Viewport(0, 0, (uint)_width, (uint)_height);
-        _gl.Clear(ClearBufferMask.ColorBufferBit);
-        _gl.Disable(EnableCap.DepthTest);
-
-        // Run bloom if enabled
+        // Run bloom on the HDR scene texture first (uses its own FBOs internally).
         uint bloomTexture = 0;
         if (bloom != null && settings.BloomEnabled)
         {
@@ -179,7 +208,12 @@ public sealed class PostProcessPipeline : IDisposable
             bloomTexture = bloom.OutputTexture;
         }
 
-        // Final composite
+        // Composite scene + bloom into _compositeFbo (RGBA8 — what gets shown and what video/screenshot reads).
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo);
+        _gl.Viewport(0, 0, (uint)_width, (uint)_height);
+        _gl.Clear(ClearBufferMask.ColorBufferBit);
+        _gl.Disable(EnableCap.DepthTest);
+
         _compositeShader!.Use();
 
         _gl.ActiveTexture(TextureUnit.Texture0);
@@ -196,6 +230,17 @@ public sealed class PostProcessPipeline : IDisposable
         }
 
         DrawQuad();
+
+        // Blit the composite to the default framebuffer for on-screen display.
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _compositeFbo);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+        _gl.BlitFramebuffer(
+            0, 0, _width, _height,
+            0, 0, _width, _height,
+            ClearBufferMask.ColorBufferBit,
+            BlitFramebufferFilter.Nearest);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _gl.Viewport(0, 0, (uint)_width, (uint)_height);
 
         _gl.Enable(EnableCap.DepthTest);
     }
@@ -225,7 +270,18 @@ public sealed class PostProcessPipeline : IDisposable
 
     public unsafe byte[] ReadPixels()
     {
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _sceneFbo);
+        return ReadPixelsFromFbo(_sceneFbo);
+    }
+
+    // Reads the post-bloom composite (what the user sees). RGBA8, top-down.
+    public unsafe byte[] ReadFinalPixels()
+    {
+        return ReadPixelsFromFbo(_compositeFbo);
+    }
+
+    private unsafe byte[] ReadPixelsFromFbo(uint fbo)
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
         var pixels = new byte[_width * _height * 4];
         fixed (byte* ptr = pixels)
         {
@@ -251,6 +307,13 @@ public sealed class PostProcessPipeline : IDisposable
         if (_sceneColorTexture != 0) _gl.DeleteTexture(_sceneColorTexture);
         if (_sceneDepthRbo != 0) _gl.DeleteRenderbuffer(_sceneDepthRbo);
         if (_sceneFbo != 0) _gl.DeleteFramebuffer(_sceneFbo);
+        if (_compositeColorTexture != 0) _gl.DeleteTexture(_compositeColorTexture);
+        if (_compositeFbo != 0) _gl.DeleteFramebuffer(_compositeFbo);
+        _sceneColorTexture = 0;
+        _sceneDepthRbo = 0;
+        _sceneFbo = 0;
+        _compositeColorTexture = 0;
+        _compositeFbo = 0;
     }
 
     public void Dispose()

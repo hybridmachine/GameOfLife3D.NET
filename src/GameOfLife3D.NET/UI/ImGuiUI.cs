@@ -130,6 +130,9 @@ public sealed class ImGuiUI
     // Screenshot callback
     public Action? OnScreenshotRequested { get; set; }
 
+    // Open the video recording panel
+    public Action? OnOpenRecordingPanel { get; set; }
+
     // Export callbacks
     public Action<string>? OnExportSTL { get; set; }
     public Action<string>? OnExportOBJ { get; set; }
@@ -1106,6 +1109,11 @@ public sealed class ImGuiUI
             if (ImGui.Button("Screenshot (F12)", new Vector2(fullWidth, 0)))
                 OnScreenshotRequested?.Invoke();
             UIHelpers.Tooltip("Save the current view as a PNG to your Desktop");
+
+            // Video recording
+            if (ImGui.Button("Record Video...", new Vector2(fullWidth, 0)))
+                OnOpenRecordingPanel?.Invoke();
+            UIHelpers.Tooltip("Open the video recording / keyframe editor");
 
             UIHelpers.ThinSeparator();
 

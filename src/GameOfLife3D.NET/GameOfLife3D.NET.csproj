@@ -34,4 +34,34 @@
     <EmbeddedResource Include="Fonts\fa-solid-900.ttf" />
   </ItemGroup>
 
+  <!--
+    Bundled ffmpeg per platform. Binaries live under third_party/ffmpeg/<rid>/
+    and are NOT yet committed; see third_party/ffmpeg/README.md for sourcing.
+    When absent, the build still succeeds (Condition=Exists) and the app falls
+    back to a system ffmpeg on PATH (or the PNG-sequence encoder).
+
+    ExcludeFromSingleFile keeps the binary sibling to the exe rather than
+    embedded inside the single-file bundle (so it can be exec'd directly).
+  -->
+  <ItemGroup>
+    <None Include="..\..\third_party\ffmpeg\win-x64\ffmpeg.exe"
+          Condition="$([MSBuild]::IsOSPlatform('Windows')) AND Exists('..\..\third_party\ffmpeg\win-x64\ffmpeg.exe')"
+          Link="ffmpeg.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+    <None Include="..\..\third_party\ffmpeg\osx-arm64\ffmpeg"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) AND Exists('..\..\third_party\ffmpeg\osx-arm64\ffmpeg')"
+          Link="ffmpeg"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+    <None Include="..\..\third_party\ffmpeg\linux-x64\ffmpeg"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) AND Exists('..\..\third_party\ffmpeg\linux-x64\ffmpeg')"
+          Link="ffmpeg"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
 </Project>

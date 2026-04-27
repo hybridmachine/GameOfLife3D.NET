@@ -2,10 +2,10 @@ using System.Numerics;
 
 namespace GameOfLife3D.NET.Camera;
 
-public sealed class CameraState
+public sealed record CameraState
 {
-    public Vector3 Target { get; set; }
-    public float Distance { get; set; }
-    public float Phi { get; set; }
-    public float Theta { get; set; }
+    public Vector3 Target { get; init; }
+    public float Distance { get; init; }
+    public float Phi { get; init; }
+    public float Theta { get; init; }
 }
