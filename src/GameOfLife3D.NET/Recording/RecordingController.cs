@@ -25,24 +25,43 @@ public sealed class RecordingController
     {
         if (IsActive) throw new InvalidOperationException("Recording already in progress.");
 
-        _settings = settings;
         LastError = null;
 
-        _encoder = CreateEncoder(settings);
+        // Construct the encoder before committing _settings so a launch failure leaves the
+        // controller fully reset (Settings == null, IsActive == false) instead of partially-initialized.
+        IVideoEncoder encoder;
+        try
+        {
+            encoder = CreateEncoder(settings);
+        }
+        catch
+        {
+            _settings = null;
+            throw;
+        }
+
+        _settings = settings;
+        _encoder = encoder;
         Clock.Reset(settings.Fps);
         IsActive = true;
     }
 
-    public void WriteFrame(byte[] rgbaPixels)
+    public void WriteFrame(byte[] rgbaPixels, int byteCount)
     {
-        if (!IsActive || _encoder == null || _settings == null) return;
+        if (!IsActive || _encoder == null || _settings == null)
+        {
+            // Producer surrendered ownership; return to the pool so we don't leak it.
+            System.Buffers.ArrayPool<byte>.Shared.Return(rgbaPixels);
+            return;
+        }
         try
         {
-            _encoder.WriteFrame(rgbaPixels, _settings.Width, _settings.Height);
+            _encoder.WriteFrame(rgbaPixels, byteCount);
         }
         catch (Exception ex)
         {
             LastError = ex.Message;
+            // FfmpegEncoder.WriteFrame returns the buffer to the pool on its own error paths.
             CancelInternal(deletePartial: true);
         }
     }
@@ -88,6 +107,7 @@ public sealed class RecordingController
     {
         try { _encoder?.Dispose(); } catch { }
         _encoder = null;
+        _settings = null;
         IsActive = false;
     }
 

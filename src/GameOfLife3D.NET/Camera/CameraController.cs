@@ -211,31 +211,11 @@ public sealed class CameraController
         int waypointCount = path.PositionWaypoints.Count;
         if (waypointCount < 2) { StopFlythrough(); return; }
 
-        int segmentIndex;
-        float localT;
-        if (path.WaypointTimes != null)
-        {
-            // Time-indexed path: binary search for the segment whose [t_i, t_{i+1}] brackets _flythroughTime.
-            var times = path.WaypointTimes;
-            int lo = 0, hi = times.Count - 1;
-            while (lo < hi)
-            {
-                int mid = (lo + hi + 1) >> 1;
-                if (times[mid] <= _flythroughTime) lo = mid; else hi = mid - 1;
-            }
-            segmentIndex = Math.Min(lo, waypointCount - 2);
-            float t0 = times[segmentIndex];
-            float t1 = times[segmentIndex + 1];
-            localT = (t1 > t0) ? Math.Clamp((_flythroughTime - t0) / (t1 - t0), 0f, 1f) : 0f;
-        }
-        else
-        {
-            // Uniformly spaced waypoints across [0, TotalDuration].
-            float normalizedT = Math.Clamp(_flythroughTime / path.TotalDuration, 0f, 1f);
-            float segmentFloat = normalizedT * (waypointCount - 1);
-            segmentIndex = (int)segmentFloat;
-            localT = segmentFloat - segmentIndex;
-        }
+        // Uniformly spaced waypoints across [0, TotalDuration].
+        float normalizedT = Math.Clamp(_flythroughTime / path.TotalDuration, 0f, 1f);
+        float segmentFloat = normalizedT * (waypointCount - 1);
+        int segmentIndex = (int)segmentFloat;
+        float localT = segmentFloat - segmentIndex;
 
         // Pick 4 control points for position spline (clamped at ends)
         int i0 = Math.Max(segmentIndex - 1, 0);

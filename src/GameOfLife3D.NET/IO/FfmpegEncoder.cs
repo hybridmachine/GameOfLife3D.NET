@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
@@ -18,8 +19,11 @@ public sealed class FfmpegEncoder : IVideoEncoder
     private readonly StringBuilder _stderrTail = new();
     private readonly Task _stderrTask;
     private readonly Task _writerTask;
-    private readonly BlockingCollection<byte[]> _queue = new(QueueCapacity);
+    private readonly BlockingCollection<QueuedFrame> _queue = new(QueueCapacity);
     private readonly string _outputPath;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly int _frameByteCount;
     private volatile bool _cancelRequested;
 
     public bool IsHealthy { get; private set; } = true;
@@ -29,8 +33,18 @@ public sealed class FfmpegEncoder : IVideoEncoder
     {
         if (codec is not (VideoCodec.Vp9Webm or VideoCodec.H264Mp4))
             throw new ArgumentException($"FfmpegEncoder doesn't support {codec}.", nameof(codec));
+        if (string.IsNullOrWhiteSpace(ffmpegPath))
+            throw new ArgumentException("ffmpeg path must be provided.", nameof(ffmpegPath));
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), width, "Width must be positive.");
+        if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height), height, "Height must be positive.");
+        if (fps <= 0) throw new ArgumentOutOfRangeException(nameof(fps), fps, "Fps must be positive.");
+        if (string.IsNullOrWhiteSpace(outputPath))
+            throw new ArgumentException("Output path must be provided.", nameof(outputPath));
 
         _outputPath = outputPath;
+        _width = width;
+        _height = height;
+        _frameByteCount = checked(width * height * 4);
         string args = BuildArgs(codec, width, height, fps, outputPath);
 
         var psi = new ProcessStartInfo
@@ -74,14 +88,27 @@ public sealed class FfmpegEncoder : IVideoEncoder
             TaskCreationOptions.LongRunning).Unwrap();
     }
 
+    private readonly record struct QueuedFrame(byte[] Buffer, int ByteCount);
+
     private async Task WriterLoop()
     {
         try
         {
-            foreach (var buf in _queue.GetConsumingEnumerable())
+            foreach (var frame in _queue.GetConsumingEnumerable())
             {
-                if (_cancelRequested) return;
-                await _stdin.WriteAsync(buf, 0, buf.Length).ConfigureAwait(false);
+                if (_cancelRequested)
+                {
+                    ArrayPool<byte>.Shared.Return(frame.Buffer);
+                    continue;
+                }
+                try
+                {
+                    await _stdin.WriteAsync(frame.Buffer.AsMemory(0, frame.ByteCount)).ConfigureAwait(false);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(frame.Buffer);
+                }
             }
         }
         catch (Exception ex)
@@ -90,20 +117,39 @@ public sealed class FfmpegEncoder : IVideoEncoder
             LastError = $"ffmpeg pipe broken: {ex.Message}\n{StderrTail()}";
             // Drain remaining frames so the producer doesn't block forever; mark queue complete.
             try { _queue.CompleteAdding(); } catch { }
-            try { while (_queue.TryTake(out _)) { } } catch { }
+            DrainAndReturn();
         }
     }
 
-    public void WriteFrame(byte[] rgbaPixels, int width, int height)
+    private void DrainAndReturn()
     {
-        if (!IsHealthy) throw new InvalidOperationException(LastError ?? "ffmpeg encoder not healthy.");
         try
         {
-            _queue.Add(rgbaPixels);
+            while (_queue.TryTake(out var frame))
+                ArrayPool<byte>.Shared.Return(frame.Buffer);
+        }
+        catch { }
+    }
+
+    public void WriteFrame(byte[] buffer, int byteCount)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        if (byteCount != _frameByteCount)
+            throw new ArgumentException($"Frame byte count {byteCount} does not match expected {_frameByteCount}.", nameof(byteCount));
+        if (!IsHealthy)
+        {
+            // Producer surrendered ownership; return immediately so we don't leak the pooled buffer.
+            ArrayPool<byte>.Shared.Return(buffer);
+            throw new InvalidOperationException(LastError ?? "ffmpeg encoder not healthy.");
+        }
+        try
+        {
+            _queue.Add(new QueuedFrame(buffer, byteCount));
         }
         catch (InvalidOperationException)
         {
-            // Queue was completed (writer hit an error). Surface the underlying cause.
+            // Queue was completed (writer hit an error). Return the buffer and surface the cause.
+            ArrayPool<byte>.Shared.Return(buffer);
             throw new IOException(LastError ?? "ffmpeg encoder closed.");
         }
     }
@@ -136,7 +182,7 @@ public sealed class FfmpegEncoder : IVideoEncoder
         IsHealthy = false;
         _cancelRequested = true;
         try { _queue.CompleteAdding(); } catch { }
-        try { while (_queue.TryTake(out _)) { } } catch { }
+        DrainAndReturn();
         try { _process.Kill(entireProcessTree: true); } catch { }
         try { _stdin.Close(); } catch { }
         try { _writerTask.Wait(2_000); } catch { }
@@ -213,10 +259,12 @@ public sealed class FfmpegEncoder : IVideoEncoder
     }
 
     // Probes `ffmpeg -encoders` for libx264. Result is cached per binary path.
+    // Uses async output draining + WaitForExit(timeout) so a stalled or chatty ffmpeg can't hang the UI.
     public static bool SupportsLibx264(string ffmpegPath)
     {
         if (_libx264Cached is bool cached && _probedBinaryPath == ffmpegPath) return cached;
 
+        bool found = false;
         try
         {
             var psi = new ProcessStartInfo
@@ -229,19 +277,33 @@ public sealed class FfmpegEncoder : IVideoEncoder
                 CreateNoWindow = true,
             };
             using var p = Process.Start(psi)!;
-            string output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(3_000);
-            bool found = output.Contains("libx264", StringComparison.Ordinal);
-            _libx264Cached = found;
-            _probedBinaryPath = ffmpegPath;
-            return found;
+
+            // Drain stdout/stderr asynchronously so the pipes never fill (which would deadlock the process).
+            var stdoutSb = new StringBuilder();
+            var stderrSb = new StringBuilder();
+            p.OutputDataReceived += (_, e) => { if (e.Data != null) lock (stdoutSb) stdoutSb.AppendLine(e.Data); };
+            p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (stderrSb) stderrSb.AppendLine(e.Data); };
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+
+            if (!p.WaitForExit(3_000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { }
+                try { p.WaitForExit(1_000); } catch { }
+            }
+            else
+            {
+                lock (stdoutSb) found = stdoutSb.ToString().Contains("libx264", StringComparison.Ordinal);
+            }
         }
         catch
         {
-            _libx264Cached = false;
-            _probedBinaryPath = ffmpegPath;
-            return false;
+            found = false;
         }
+
+        _libx264Cached = found;
+        _probedBinaryPath = ffmpegPath;
+        return found;
     }
 
     public static string CodecExtension(VideoCodec codec) => codec switch

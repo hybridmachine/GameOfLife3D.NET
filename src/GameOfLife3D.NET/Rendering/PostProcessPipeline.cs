@@ -1,4 +1,5 @@
 using Silk.NET.OpenGL;
+using System.Buffers;
 using System.Numerics;
 
 namespace GameOfLife3D.NET.Rendering;
@@ -268,35 +269,45 @@ public sealed class PostProcessPipeline : IDisposable
         _gl.BindVertexArray(0);
     }
 
-    public unsafe byte[] ReadPixels()
+    // Reads the pre-bloom scene. The returned buffer is rented from ArrayPool<byte>.Shared —
+    // the caller MUST return it via ArrayPool<byte>.Shared.Return when done. byteCount is the
+    // number of leading bytes that contain pixel data (pooled buffers may have Length >= byteCount).
+    public unsafe byte[] ReadPixels(out int byteCount)
     {
-        return ReadPixelsFromFbo(_sceneFbo);
+        return ReadPixelsFromFbo(_sceneFbo, out byteCount);
     }
 
     // Reads the post-bloom composite (what the user sees). RGBA8, top-down.
-    public unsafe byte[] ReadFinalPixels()
+    // The returned buffer is rented from ArrayPool<byte>.Shared — caller must return it.
+    public unsafe byte[] ReadFinalPixels(out int byteCount)
     {
-        return ReadPixelsFromFbo(_compositeFbo);
+        return ReadPixelsFromFbo(_compositeFbo, out byteCount);
     }
 
-    private unsafe byte[] ReadPixelsFromFbo(uint fbo)
+    private unsafe byte[] ReadPixelsFromFbo(uint fbo, out int byteCount)
     {
+        int needed = _width * _height * 4;
+        byteCount = needed;
+
+        byte[] readBuf = ArrayPool<byte>.Shared.Rent(needed);
+        byte[] outBuf = ArrayPool<byte>.Shared.Rent(needed);
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
-        var pixels = new byte[_width * _height * 4];
-        fixed (byte* ptr = pixels)
+        fixed (byte* ptr = readBuf)
         {
             _gl.ReadPixels(0, 0, (uint)_width, (uint)_height, PixelFormat.Rgba, PixelType.UnsignedByte, ptr);
         }
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
-        // Flip vertically (OpenGL reads bottom-to-top)
+        // Flip vertically (OpenGL reads bottom-to-top) into outBuf.
         int rowSize = _width * 4;
-        var flipped = new byte[pixels.Length];
         for (int y = 0; y < _height; y++)
         {
-            Array.Copy(pixels, (_height - 1 - y) * rowSize, flipped, y * rowSize, rowSize);
+            Array.Copy(readBuf, (_height - 1 - y) * rowSize, outBuf, y * rowSize, rowSize);
         }
-        return flipped;
+
+        ArrayPool<byte>.Shared.Return(readBuf);
+        return outBuf;
     }
 
     public int Width => _width;

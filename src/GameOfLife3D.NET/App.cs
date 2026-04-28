@@ -292,8 +292,8 @@ public sealed class App : IDisposable
         {
             try
             {
-                var pixels = _renderer.PostProcess!.ReadFinalPixels();
-                _recording!.WriteFrame(pixels);
+                byte[] pixels = _renderer.PostProcess!.ReadFinalPixels(out int byteCount);
+                _recording!.WriteFrame(pixels, byteCount); // ownership transferred; encoder returns to ArrayPool
                 _recording.AdvanceFrame();
 
                 _ui.IsRecording = _recording.IsActive;
@@ -309,7 +309,7 @@ public sealed class App : IDisposable
                     _ui.IsRecording = false;
                     _ui.RecordingProgress01 = 0.0;
                     _pendingTempPath = null; // encoder.Cancel already deleted the file
-                    SetRecordingStatus($"Recording failed: {err}", currentTime, 8.0);
+                    SetRecordingStatus($"Recording failed: {err}", 8.0);
                 }
                 else if (_recording.IsComplete)
                 {
@@ -326,12 +326,13 @@ public sealed class App : IDisposable
                 _ui.IsRecording = false;
                 _ui.RecordingProgress01 = 0.0;
                 CleanupTempFile();
-                SetRecordingStatus($"Recording failed: {ex.Message}", currentTime, 8.0);
+                SetRecordingStatus($"Recording failed: {ex.Message}", 8.0);
             }
         }
 
-        // Expire status messages after their TTL.
-        if (_ui.RecordingStatusMessage != null && currentTime > _recordingStatusUntil)
+        // Expire status messages after their TTL. Always uses wall-clock so messages don't
+        // disappear when the recording clock yields back to wall-clock at end-of-recording.
+        if (_ui.RecordingStatusMessage != null && _window!.Time > _recordingStatusUntil)
             _ui.RecordingStatusMessage = null;
 
         // Render ImGui UI. Capture happens before ImGui draws, so the HUD is never in the recording.
@@ -561,14 +562,22 @@ public sealed class App : IDisposable
         if (_recording == null || _ui == null || _renderer?.PostProcess == null) return;
         if (_recording.IsActive) return;
 
-        if (FfmpegEncoder.LocateBinary() == null)
+        string? ffmpegPath = FfmpegEncoder.LocateBinary();
+        if (ffmpegPath == null)
         {
-            SetRecordingStatus(FfmpegEncoder.InstallInstructions(), _window!.Time, 12.0);
+            SetRecordingStatus(FfmpegEncoder.InstallInstructions(), 12.0);
             Console.Error.WriteLine(FfmpegEncoder.InstallInstructions());
             return;
         }
 
         VideoCodec codec = _ui.RecordingCodec;
+        if (codec == VideoCodec.H264Mp4 && !FfmpegEncoder.SupportsLibx264(ffmpegPath))
+        {
+            const string msg = "Selected ffmpeg build doesn't include libx264 (H.264 MP4). Switch the codec to VP9 WebM in the recording panel, or install an ffmpeg build with libx264 support.";
+            SetRecordingStatus(msg, 12.0);
+            Console.Error.WriteLine(msg);
+            return;
+        }
         string ext = FfmpegEncoder.CodecExtension(codec);
         string tempPath = Path.Combine(
             Path.GetTempPath(),
@@ -577,7 +586,7 @@ public sealed class App : IDisposable
         var settings = new RecordingSettings
         {
             Codec = codec,
-            Fps = 60,
+            Fps = 30,
             Width = _renderer.PostProcess.Width,
             Height = _renderer.PostProcess.Height,
             OutputPath = tempPath,
@@ -591,12 +600,12 @@ public sealed class App : IDisposable
             _pendingCodec = codec;
             _ui.IsRecording = true;
             _ui.RecordingProgress01 = 0.0;
-            SetRecordingStatus($"Recording {settings.DurationSeconds:F0} s…", _window!.Time, settings.DurationSeconds + 2.0);
+            SetRecordingStatus($"Recording {settings.DurationSeconds:F0} s…", settings.DurationSeconds + 2.0);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Failed to start recording: {ex.Message}");
-            SetRecordingStatus($"Failed to start recording: {ex.Message}", _window!.Time, 8.0);
+            SetRecordingStatus($"Failed to start recording: {ex.Message}", 8.0);
             try { File.Delete(tempPath); } catch { }
         }
     }
@@ -621,7 +630,7 @@ public sealed class App : IDisposable
         if (dest == null)
         {
             try { File.Delete(tempPath); } catch { }
-            SetRecordingStatus("Recording discarded.", _window!.Time, 4.0);
+            SetRecordingStatus("Recording discarded.", 4.0);
             return;
         }
 
@@ -634,12 +643,12 @@ public sealed class App : IDisposable
         {
             File.Move(tempPath, dest, overwrite: true);
             Console.WriteLine($"Recording saved: {dest}");
-            SetRecordingStatus($"Saved: {Path.GetFileName(dest)}", _window!.Time, 6.0);
+            SetRecordingStatus($"Saved: {Path.GetFileName(dest)}", 6.0);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Failed to save recording: {ex.Message}");
-            SetRecordingStatus($"Save failed: {ex.Message}", _window!.Time, 8.0);
+            SetRecordingStatus($"Save failed: {ex.Message}", 8.0);
             try { File.Delete(tempPath); } catch { }
         }
     }
@@ -651,26 +660,33 @@ public sealed class App : IDisposable
         _pendingTempPath = null;
     }
 
-    private void SetRecordingStatus(string message, double now, double ttlSeconds)
+    private void SetRecordingStatus(string message, double ttlSeconds)
     {
         if (_ui == null) return;
         _ui.RecordingStatusMessage = message;
-        _recordingStatusUntil = now + ttlSeconds;
+        // Anchor TTL to wall-clock; the recording clock starts at 0 each session and would cause
+        // the message to expire immediately when the clock yields back to wall-clock at finish.
+        _recordingStatusUntil = (_window?.Time ?? 0.0) + ttlSeconds;
     }
 
     public void TakeScreenshot()
     {
         if (_renderer?.PostProcess == null) return;
 
+        byte[]? pixels = null;
         try
         {
-            var pixels = _renderer.PostProcess.ReadFinalPixels();
+            pixels = _renderer.PostProcess.ReadFinalPixels(out _);
             string path = ScreenshotCapture.SaveToDesktop(pixels, _renderer.PostProcess.Width, _renderer.PostProcess.Height);
             Console.WriteLine($"Screenshot saved: {path}");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Screenshot failed: {ex.Message}");
+        }
+        finally
+        {
+            if (pixels != null) System.Buffers.ArrayPool<byte>.Shared.Return(pixels);
         }
     }
 
@@ -684,7 +700,7 @@ public sealed class App : IDisposable
             _recording.Cancel();
             if (_ui != null) { _ui.IsRecording = false; _ui.RecordingProgress01 = 0.0; }
             _pendingTempPath = null;
-            SetRecordingStatus("Recording cancelled (window resized).", _window?.Time ?? 0.0, 6.0);
+            SetRecordingStatus("Recording cancelled (window resized).", 6.0);
         }
 
         _gl?.Viewport(size);
