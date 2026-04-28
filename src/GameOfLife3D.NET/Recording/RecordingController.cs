@@ -82,8 +82,12 @@ public sealed class RecordingController
         catch (Exception ex)
         {
             LastError = ex.Message;
+            throw;
         }
-        TeardownInternal();
+        finally
+        {
+            TeardownInternal();
+        }
     }
 
     public void Cancel()

@@ -148,12 +148,13 @@ public sealed class CameraController
         var up = Vector3.UnitY;
         var move = Vector3.Zero;
         bool hasKeyboardCameraInput = false;
+        bool shortcutModifierDown = IsShortcutModifierDown();
 
         if (IsKeyDown(Key.W) || IsKeyDown(Key.Up)) { move += forward; hasKeyboardCameraInput = true; }
         if (IsKeyDown(Key.S) || IsKeyDown(Key.Down)) { move -= forward; hasKeyboardCameraInput = true; }
         if (IsKeyDown(Key.A) || IsKeyDown(Key.Left)) { move -= right; hasKeyboardCameraInput = true; }
         if (IsKeyDown(Key.D) || IsKeyDown(Key.Right)) { move += right; hasKeyboardCameraInput = true; }
-        if (IsKeyDown(Key.R)) { move += up; hasKeyboardCameraInput = true; }
+        if (IsKeyDown(Key.R) && !shortcutModifierDown) { move += up; hasKeyboardCameraInput = true; }
         if (IsKeyDown(Key.C)) { move -= up; hasKeyboardCameraInput = true; }
 
         if (IsKeyDown(Key.Q))
@@ -257,7 +258,7 @@ public sealed class CameraController
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
     {
         _keysDown.Add(key);
-        if (!_imGuiWantsKeyboard && IsCameraControlKey(key))
+        if (!_imGuiWantsKeyboard && IsCameraControlKey(key) && !(key == Key.R && IsShortcutModifierDown()))
         {
             StopAutoOrbit();
         }
@@ -326,6 +327,10 @@ public sealed class CameraController
     }
 
     private bool IsKeyDown(Key key) => _keysDown.Contains(key);
+
+    private bool IsShortcutModifierDown() =>
+        IsKeyDown(Key.ControlLeft) || IsKeyDown(Key.ControlRight) ||
+        IsKeyDown(Key.SuperLeft) || IsKeyDown(Key.SuperRight);
 
     private static bool IsCameraControlKey(Key key) => key is
         Key.W or Key.A or Key.S or Key.D or

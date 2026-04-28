@@ -249,6 +249,9 @@ public sealed class App : IDisposable
         var io = ImGui.GetIO();
         _camera.SetImGuiCapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
 
+        // Recording is an app-level shortcut and should work even in cinematic mode.
+        HandleRecordingShortcut();
+
         // Handle cinematic mode shortcuts (always active, even during WantCaptureKeyboard)
         HandleCinematicShortcuts(currentTime);
 
@@ -268,7 +271,6 @@ public sealed class App : IDisposable
             _escWasDown = false;
             _zeroWasDown = false;
             _fWasDown = false;
-            _ctrlRWasDown = false;
         }
 
         // Update systems — same path whether recording or not.
@@ -321,7 +323,7 @@ public sealed class App : IDisposable
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Recording frame failed: {ex.Message}");
+                Console.Error.WriteLine($"Recording failed: {ex.Message}");
                 _recording?.Cancel();
                 _ui.IsRecording = false;
                 _ui.RecordingProgress01 = 0.0;
@@ -340,6 +342,14 @@ public sealed class App : IDisposable
         _imGuiController.Render();
     }
 
+    private void HandleRecordingShortcut()
+    {
+        bool ctrlR = IsShortcutModifierDown() && IsAnyKeyPressed(Key.R);
+        if (ctrlR && !_ctrlRWasDown)
+            StartRecording();
+        _ctrlRWasDown = ctrlR;
+    }
+
     private void HandleKeyboardShortcuts()
     {
         bool spaceDown = false;
@@ -350,7 +360,7 @@ public sealed class App : IDisposable
         bool rDown = false;
         bool escDown = false;
         bool zeroDown = false;
-        bool ctrlDown = false;
+        bool ctrlDown = IsShortcutModifierDown();
 
         foreach (var keyboard in _input!.Keyboards)
         {
@@ -362,16 +372,7 @@ public sealed class App : IDisposable
             if (keyboard.IsKeyPressed(Key.R)) rDown = true;
             if (keyboard.IsKeyPressed(Key.Escape)) escDown = true;
             if (keyboard.IsKeyPressed(Key.Number0) || keyboard.IsKeyPressed(Key.Keypad0)) zeroDown = true;
-            if (keyboard.IsKeyPressed(Key.ControlLeft) || keyboard.IsKeyPressed(Key.ControlRight) ||
-                keyboard.IsKeyPressed(Key.SuperLeft) || keyboard.IsKeyPressed(Key.SuperRight))
-                ctrlDown = true;
         }
-
-        // Ctrl+R: start recording (one-press capture). Suppresses the edit-mode 'R' rotation while held.
-        bool ctrlR = ctrlDown && rDown;
-        if (ctrlR && !_ctrlRWasDown)
-            StartRecording();
-        _ctrlRWasDown = ctrlR;
 
         // Space: play/pause
         if (spaceDown && !_spaceWasDown)
@@ -458,6 +459,27 @@ public sealed class App : IDisposable
             }
         }
         _fWasDown = fDown;
+    }
+
+    private bool IsAnyKeyPressed(Key key)
+    {
+        foreach (var keyboard in _input!.Keyboards)
+        {
+            if (keyboard.IsKeyPressed(key))
+                return true;
+        }
+        return false;
+    }
+
+    private bool IsShortcutModifierDown()
+    {
+        foreach (var keyboard in _input!.Keyboards)
+        {
+            if (keyboard.IsKeyPressed(Key.ControlLeft) || keyboard.IsKeyPressed(Key.ControlRight) ||
+                keyboard.IsKeyPressed(Key.SuperLeft) || keyboard.IsKeyPressed(Key.SuperRight))
+                return true;
+        }
+        return false;
     }
 
     private void HandleCinematicShortcuts(double currentTime)
