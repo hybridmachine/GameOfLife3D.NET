@@ -6,8 +6,9 @@ using ImGuiNET;
 
 namespace GameOfLife3D.NET.UI;
 
-// Editor window for video recording: keyframe list, codec/resolution/fps, output path,
-// Start/Cancel. Also draws a small floating progress overlay while a recording is active.
+// Editor window for video recording: keyframe list, codec/fps/output path, Start/Cancel.
+// Also draws a small floating progress overlay while a recording is active.
+// Requires ffmpeg on PATH; if missing, the panel shows install instructions and disables Start.
 public sealed class RecordingPanel
 {
     public bool Visible { get; set; }
@@ -24,7 +25,7 @@ public sealed class RecordingPanel
     private static readonly int[] FpsOptions = [24, 30, 60];
 
     private int _fpsIdx = 1;            // 30 default
-    private int _codecIdx;              // 0 = WebM, 1 = MP4, 2 = PNG sequence
+    private int _codecIdx;              // 0 = WebM, 1 = MP4
     private bool? _h264Available;
     private bool? _ffmpegAvailable;
     private float _durationSeconds = 10f;
@@ -62,6 +63,16 @@ public sealed class RecordingPanel
             return;
         }
 
+        ProbeFfmpeg();
+
+        if (_ffmpegAvailable != true)
+        {
+            RenderFfmpegMissingBanner();
+            ImGui.End();
+            Visible = open;
+            return;
+        }
+
         if (!string.IsNullOrEmpty(LastErrorMessage))
         {
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
@@ -83,32 +94,36 @@ public sealed class RecordingPanel
         Visible = open;
     }
 
+    private void ProbeFfmpeg()
+    {
+        if (_ffmpegAvailable != null) return;
+        string? path = FfmpegEncoder.LocateBinary();
+        _ffmpegAvailable = path != null;
+        _h264Available = path != null && FfmpegEncoder.SupportsLibx264(path);
+    }
+
+    private void RenderFfmpegMissingBanner()
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.7f, 0.3f, 1f));
+        ImGui.TextWrapped("Video recording requires ffmpeg.");
+        ImGui.PopStyleColor();
+        ImGui.Spacing();
+        ImGui.TextWrapped(FfmpegEncoder.InstallInstructions());
+    }
+
     private void RenderOutputSection()
     {
         ImGui.TextUnformatted("Output");
 
-        // Probe ffmpeg availability + libx264 support once on first render. Cached for the session.
-        if (_ffmpegAvailable == null)
-        {
-            string? path = FfmpegEncoder.LocateBinary();
-            _ffmpegAvailable = path != null;
-            _h264Available = path != null && FfmpegEncoder.SupportsLibx264(path);
-        }
         bool h264Ok = _h264Available == true;
-        bool ffmpegOk = _ffmpegAvailable == true;
 
-        ImGui.SetNextItemWidth(200);
-        string mp4Label = h264Ok ? "MP4 (H.264, ffmpeg)" : "MP4 (H.264) — needs libx264";
-        string webmLabel = ffmpegOk ? "WebM (VP9, ffmpeg)" : "WebM (VP9) — needs ffmpeg";
-        string[] codecLabels = [webmLabel, mp4Label, "PNG sequence"];
+        // Codec dropdown — MP4 only enabled when libx264 is available.
+        ImGui.SetNextItemWidth(220);
+        string mp4Label = h264Ok ? "MP4 (H.264)" : "MP4 (H.264) — needs libx264";
+        string[] codecLabels = ["WebM (VP9)", mp4Label];
         ImGui.Combo("Codec", ref _codecIdx, codecLabels, codecLabels.Length);
+        if (_codecIdx == 1 && !h264Ok) _codecIdx = 0;
 
-        // Auto-bounce off disabled options to PNG sequence (always works).
-        if (_codecIdx == 0 && !ffmpegOk) _codecIdx = 2;
-        if (_codecIdx == 1 && !h264Ok) _codecIdx = ffmpegOk ? 0 : 2;
-
-        // Show the actual capture size (= live framebuffer). The resolution preset is
-        // informational for v1; resizing the render target during recording is a follow-up.
         if (FramebufferSizeProvider != null)
         {
             var (fbW, fbH) = FramebufferSizeProvider();
@@ -124,16 +139,12 @@ public sealed class RecordingPanel
         if (ImGui.Button("Browse..."))
         {
             var codec = SelectedCodec;
-            string? picked = codec == VideoCodec.PngSequence
-                ? FileDialogHelper.SaveFile("", _outputPath)   // user enters a directory name
-                : FileDialogHelper.SaveFile(FfmpegEncoder.CodecExtension(codec).TrimStart('.'), _outputPath);
+            string ext = FfmpegEncoder.CodecExtension(codec).TrimStart('.');
+            string? picked = FileDialogHelper.SaveFile(ext, _outputPath);
             if (!string.IsNullOrEmpty(picked))
             {
-                if (codec != VideoCodec.PngSequence)
-                {
-                    string ext = FfmpegEncoder.CodecExtension(codec);
-                    if (!picked.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) picked += ext;
-                }
+                string dotExt = FfmpegEncoder.CodecExtension(codec);
+                if (!picked.EndsWith(dotExt, StringComparison.OrdinalIgnoreCase)) picked += dotExt;
                 _outputPath = picked;
             }
         }
@@ -278,8 +289,6 @@ public sealed class RecordingPanel
     {
         0 => VideoCodec.Vp9Webm,
         1 => VideoCodec.H264Mp4,
-        2 => VideoCodec.PngSequence,
         _ => VideoCodec.Vp9Webm,
     };
-
 }

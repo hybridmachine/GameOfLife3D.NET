@@ -4,7 +4,7 @@ using System.Text;
 namespace GameOfLife3D.NET.IO;
 
 // Spawns ffmpeg and pipes raw RGBA frames into its stdin.
-// Discovery order: bundled binary next to exe → macOS Contents/Resources → PATH → common installs.
+// Discovery order: PATH → common install locations.
 public sealed class FfmpegEncoder : IVideoEncoder
 {
     private readonly Process _process;
@@ -137,20 +137,7 @@ public sealed class FfmpegEncoder : IVideoEncoder
     {
         string name = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
 
-        // 1. Bundled binary next to executable.
-        string exeDir = AppContext.BaseDirectory;
-        string bundled = Path.Combine(exeDir, name);
-        if (File.Exists(bundled)) return bundled;
-
-        // 2. macOS .app bundle: AppContext.BaseDirectory points at Contents/MacOS;
-        //    the signing script relocates ffmpeg into Contents/Resources.
-        if (OperatingSystem.IsMacOS())
-        {
-            string resources = Path.GetFullPath(Path.Combine(exeDir, "..", "Resources", "ffmpeg"));
-            if (File.Exists(resources)) return resources;
-        }
-
-        // 3. PATH.
+        // 1. PATH.
         string pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
         foreach (var dir in pathVar.Split(Path.PathSeparator))
         {
@@ -159,7 +146,7 @@ public sealed class FfmpegEncoder : IVideoEncoder
             if (File.Exists(candidate)) return candidate;
         }
 
-        // 4. Common install locations.
+        // 2. Common install locations not always on PATH inside .app bundles / launchd contexts.
         string[] extras = OperatingSystem.IsMacOS()
             ? new[] { "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg" }
             : OperatingSystem.IsLinux()
@@ -168,6 +155,18 @@ public sealed class FfmpegEncoder : IVideoEncoder
         foreach (var p in extras) if (File.Exists(p)) return p;
 
         return null;
+    }
+
+    // Platform-specific install hint shown in the UI when no ffmpeg is detected.
+    public static string InstallInstructions()
+    {
+        if (OperatingSystem.IsMacOS())
+            return "ffmpeg is not installed.\n\nInstall with Homebrew:\n  brew install ffmpeg\n\nThen restart GameOfLife3D.NET to enable video recording.";
+        if (OperatingSystem.IsWindows())
+            return "ffmpeg is not installed.\n\nInstall with winget:\n  winget install ffmpeg\n\nor download from https://ffmpeg.org/download.html and add it to your PATH.\n\nThen restart GameOfLife3D.NET to enable video recording.";
+        if (OperatingSystem.IsLinux())
+            return "ffmpeg is not installed.\n\nInstall with your package manager, e.g.:\n  sudo apt install ffmpeg\n  sudo dnf install ffmpeg\n\nThen restart GameOfLife3D.NET to enable video recording.";
+        return "ffmpeg is not installed. Install it from https://ffmpeg.org/download.html and restart GameOfLife3D.NET to enable video recording.";
     }
 
     // Probes `ffmpeg -encoders` for libx264. Result is cached per binary path.
@@ -206,7 +205,6 @@ public sealed class FfmpegEncoder : IVideoEncoder
     {
         VideoCodec.Vp9Webm => ".webm",
         VideoCodec.H264Mp4 => ".mp4",
-        VideoCodec.PngSequence => "",
         _ => throw new ArgumentOutOfRangeException(nameof(codec)),
     };
 }

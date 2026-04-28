@@ -106,14 +106,6 @@ mkdir -p "$RESOURCES_DIR"
 # Copy all published files into Contents/MacOS/
 cp -R "$PUBLISH_DIR/"* "$MACOS_BIN_DIR/"
 
-# Relocate bundled ffmpeg into Contents/Resources/ (FfmpegEncoder.LocateBinary
-# checks ../Resources/ffmpeg when running from inside a .app bundle).
-if [[ -f "$MACOS_BIN_DIR/ffmpeg" ]]; then
-  echo "Relocating bundled ffmpeg → Contents/Resources/"
-  mv "$MACOS_BIN_DIR/ffmpeg" "$RESOURCES_DIR/ffmpeg"
-  chmod +x "$RESOURCES_DIR/ffmpeg"
-fi
-
 # Copy Info.plist
 cp "$MACOS_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
 
@@ -191,17 +183,6 @@ find "$MACOS_BIN_DIR" -type f -print0 | while IFS= read -r -d '' file; do
     --timestamp \
     "$file"
 done
-
-# Sign bundled ffmpeg (lives in Resources/, not picked up by the MACOS_BIN_DIR find)
-if [[ -f "$RESOURCES_DIR/ffmpeg" ]]; then
-  echo ""
-  echo "Signing bundled ffmpeg..."
-  codesign --force --options runtime \
-    --entitlements "$ENTITLEMENTS" \
-    --sign "$CERTIFICATE_IDENTITY" \
-    --timestamp \
-    "$RESOURCES_DIR/ffmpeg"
-fi
 
 # Sign the main executable after all subcomponents are signed
 echo ""

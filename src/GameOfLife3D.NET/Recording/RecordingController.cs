@@ -176,19 +176,8 @@ public sealed class RecordingController
 
     private static IVideoEncoder CreateEncoder(RecordingSettings settings)
     {
-        return settings.Codec switch
-        {
-            VideoCodec.PngSequence => new PngSequenceEncoder(settings.OutputPath),
-            VideoCodec.Vp9Webm or VideoCodec.H264Mp4 => CreateFfmpegEncoder(settings),
-            _ => throw new ArgumentOutOfRangeException(nameof(settings.Codec)),
-        };
-    }
-
-    private static IVideoEncoder CreateFfmpegEncoder(RecordingSettings settings)
-    {
         string? ffmpegPath = FfmpegEncoder.LocateBinary()
-            ?? throw new InvalidOperationException(
-                "ffmpeg binary not found. Install ffmpeg or use the PNG sequence option.");
+            ?? throw new InvalidOperationException(FfmpegEncoder.InstallInstructions());
         return new FfmpegEncoder(ffmpegPath, settings.Codec, settings.Width, settings.Height, settings.Fps, settings.OutputPath);
     }
 }
