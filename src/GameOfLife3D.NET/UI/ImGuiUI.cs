@@ -130,8 +130,14 @@ public sealed class ImGuiUI
     // Screenshot callback
     public Action? OnScreenshotRequested { get; set; }
 
-    // Open the video recording panel
-    public Action? OnOpenRecordingPanel { get; set; }
+    // Recording settings (read by App when Ctrl+R is pressed)
+    public int RecordingDurationSeconds { get; set; } = 10;
+    public VideoCodec RecordingCodec { get; set; } = VideoCodec.H264Mp4;
+
+    // Recording status (written by App each frame)
+    public bool IsRecording { get; set; }
+    public double RecordingProgress01 { get; set; }
+    public string? RecordingStatusMessage { get; set; }
 
     // Export callbacks
     public Action<string>? OnExportSTL { get; set; }
@@ -189,6 +195,10 @@ public sealed class ImGuiUI
 
     public void Tick(double currentTime)
     {
+        // Defensive: if the clock jumps backward (e.g. wall-clock → recording-clock at start of
+        // a recording, or back at the end), re-anchor so the next tick interval is correct.
+        if (currentTime < _lastAnimationTime || currentTime < _lastTickTime - 1.0)
+            _lastAnimationTime = currentTime;
         _lastTickTime = currentTime;
         if (!_isPlaying) return;
 
@@ -272,6 +282,11 @@ public sealed class ImGuiUI
 
     public void Render(int windowWidth, int windowHeight)
     {
+        // Recording indicator is drawn on the foreground draw list, which renders after the
+        // post-bloom composite is captured — so it is visible to the user but never in the file.
+        if (IsRecording)
+            RenderRecordingIndicator(windowWidth);
+
         if (IsCinematicModeActive)
         {
             RenderCinematicHint(windowWidth, windowHeight);
@@ -287,6 +302,40 @@ public sealed class ImGuiUI
             _renderer.GetVisibleCellCount(), windowWidth, windowHeight);
         RenderControlPanelToggle(windowWidth);
         RenderTimelineToggle(windowHeight);
+    }
+
+    private void RenderRecordingIndicator(int windowWidth)
+    {
+        var drawList = ImGui.GetForegroundDrawList();
+
+        // Position: just left of the gear toggle, vertically centered with it.
+        float gearLeftX = windowWidth - ControlPanelToggleSize - ControlPanelMargin;
+        float gearCenterY = ControlPanelMargin + ControlPanelToggleSize * 0.5f;
+        float radius = 7f;
+        float gap = 10f;
+        var center = new Vector2(gearLeftX - gap - radius, gearCenterY);
+
+        // ~1 Hz blink driven by the active clock (wall-clock or recording clock — either is fine).
+        bool on = (int)(_lastTickTime * 2.0) % 2 == 0;
+        if (on)
+        {
+            uint red = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.18f, 0.18f, 1f));
+            drawList.AddCircleFilled(center, radius, red);
+        }
+        // Subtle outline so the dot is visible against bright scenes when blinked off.
+        uint outline = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.55f));
+        drawList.AddCircle(center, radius + 0.5f, outline, 16, 1.2f);
+
+        // Countdown: seconds remaining, centered under the dot.
+        double remaining = Math.Max(0.0,
+            RecordingDurationSeconds * (1.0 - Math.Clamp(RecordingProgress01, 0.0, 1.0)));
+        string label = $"{remaining:F0}s";
+        var textSize = ImGui.CalcTextSize(label);
+        var textPos = new Vector2(center.X - textSize.X * 0.5f, center.Y + radius + 4f);
+        uint textColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.9f));
+        uint shadow = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.7f));
+        drawList.AddText(new Vector2(textPos.X + 1, textPos.Y + 1), shadow, label);
+        drawList.AddText(textPos, textColor, label);
     }
 
     private void RenderCinematicHint(int windowWidth, int windowHeight)
@@ -1111,9 +1160,39 @@ public sealed class ImGuiUI
             UIHelpers.Tooltip("Save the current view as a PNG to your Desktop");
 
             // Video recording
-            if (ImGui.Button("Record Video...", new Vector2(fullWidth, 0)))
-                OnOpenRecordingPanel?.Invoke();
-            UIHelpers.Tooltip("Open the video recording / keyframe editor");
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Record Video");
+            ImGui.PopStyleColor();
+
+            int duration = RecordingDurationSeconds;
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.SliderInt("##rec_duration", ref duration, 1, 120, "Duration: %d s"))
+                RecordingDurationSeconds = Math.Clamp(duration, 1, 120);
+
+            string[] codecLabels = ["H.264 MP4", "VP9 WebM"];
+            int codecIdx = RecordingCodec == VideoCodec.H264Mp4 ? 0 : 1;
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.Combo("##rec_codec", ref codecIdx, codecLabels, codecLabels.Length))
+                RecordingCodec = codecIdx == 0 ? VideoCodec.H264Mp4 : VideoCodec.Vp9Webm;
+
+            if (IsRecording)
+            {
+                ImGui.ProgressBar((float)RecordingProgress01, new Vector2(fullWidth, 0),
+                    $"Recording {RecordingProgress01 * RecordingDurationSeconds:F1} / {RecordingDurationSeconds} s");
+            }
+            else
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+                ImGui.TextWrapped("Press Ctrl+R to start recording");
+                ImGui.PopStyleColor();
+            }
+
+            if (!string.IsNullOrEmpty(RecordingStatusMessage))
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+                ImGui.TextWrapped(RecordingStatusMessage);
+                ImGui.PopStyleColor();
+            }
 
             UIHelpers.ThinSeparator();
 

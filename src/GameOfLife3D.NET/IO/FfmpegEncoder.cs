@@ -1,17 +1,26 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 
 namespace GameOfLife3D.NET.IO;
 
-// Spawns ffmpeg and pipes raw RGBA frames into its stdin.
+// Spawns ffmpeg and pipes raw RGBA frames into its stdin via a background writer thread,
+// so encoder latency does not stall the render loop. The producer (WriteFrame) only blocks
+// when the queue is full — natural back-pressure if ffmpeg can't keep up.
 // Discovery order: PATH → common install locations.
 public sealed class FfmpegEncoder : IVideoEncoder
 {
+    // Bounded queue: at 1080p RGBA each frame is ~8 MB, so capacity 4 = ~32 MB high-water mark.
+    private const int QueueCapacity = 4;
+
     private readonly Process _process;
     private readonly Stream _stdin;
     private readonly StringBuilder _stderrTail = new();
     private readonly Task _stderrTask;
+    private readonly Task _writerTask;
+    private readonly BlockingCollection<byte[]> _queue = new(QueueCapacity);
     private readonly string _outputPath;
+    private volatile bool _cancelRequested;
 
     public bool IsHealthy { get; private set; } = true;
     public string? LastError { get; private set; }
@@ -59,25 +68,52 @@ public sealed class FfmpegEncoder : IVideoEncoder
             }
             catch { /* process exited */ }
         });
+
+        // Writer thread: drains the queue into ffmpeg's stdin so the render loop never blocks on encoding.
+        _writerTask = Task.Factory.StartNew(WriterLoop,
+            TaskCreationOptions.LongRunning).Unwrap();
     }
 
-    public void WriteFrame(ReadOnlySpan<byte> rgbaPixels, int width, int height)
+    private async Task WriterLoop()
     {
-        if (!IsHealthy) throw new InvalidOperationException(LastError ?? "ffmpeg encoder not healthy.");
         try
         {
-            _stdin.Write(rgbaPixels);
+            foreach (var buf in _queue.GetConsumingEnumerable())
+            {
+                if (_cancelRequested) return;
+                await _stdin.WriteAsync(buf, 0, buf.Length).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
             IsHealthy = false;
             LastError = $"ffmpeg pipe broken: {ex.Message}\n{StderrTail()}";
-            throw new IOException(LastError);
+            // Drain remaining frames so the producer doesn't block forever; mark queue complete.
+            try { _queue.CompleteAdding(); } catch { }
+            try { while (_queue.TryTake(out _)) { } } catch { }
+        }
+    }
+
+    public void WriteFrame(byte[] rgbaPixels, int width, int height)
+    {
+        if (!IsHealthy) throw new InvalidOperationException(LastError ?? "ffmpeg encoder not healthy.");
+        try
+        {
+            _queue.Add(rgbaPixels);
+        }
+        catch (InvalidOperationException)
+        {
+            // Queue was completed (writer hit an error). Surface the underlying cause.
+            throw new IOException(LastError ?? "ffmpeg encoder closed.");
         }
     }
 
     public void Finish()
     {
+        // Signal "no more frames" — writer drains then exits.
+        try { _queue.CompleteAdding(); } catch { }
+        try { _writerTask.Wait(30_000); } catch { }
+
         try { _stdin.Close(); } catch { }
         if (!_process.WaitForExit(30_000))
         {
@@ -98,14 +134,19 @@ public sealed class FfmpegEncoder : IVideoEncoder
     public void Cancel()
     {
         IsHealthy = false;
+        _cancelRequested = true;
+        try { _queue.CompleteAdding(); } catch { }
+        try { while (_queue.TryTake(out _)) { } } catch { }
         try { _process.Kill(entireProcessTree: true); } catch { }
         try { _stdin.Close(); } catch { }
+        try { _writerTask.Wait(2_000); } catch { }
         try { _process.WaitForExit(2_000); } catch { }
         try { File.Delete(_outputPath); } catch { }
     }
 
     public void Dispose()
     {
+        try { _queue.Dispose(); } catch { }
         try { _stdin.Dispose(); } catch { }
         try { _process.Dispose(); } catch { }
     }
@@ -119,10 +160,12 @@ public sealed class FfmpegEncoder : IVideoEncoder
     {
         // Common input: raw RGBA frames on stdin. Matches PostProcessPipeline.ReadFinalPixels output exactly.
         string input = $"-y -hide_banner -loglevel warning -f rawvideo -pix_fmt rgba -s {w}x{h} -r {fps} -i -";
+        // Encoder presets are tuned for low CPU cost so encoding doesn't stall the render thread.
+        // ultrafast / realtime trade ~30% file size for ~5–10× faster encoding.
         string videoArgs = codec switch
         {
-            VideoCodec.Vp9Webm => "-c:v libvpx-vp9 -pix_fmt yuv420p -b:v 0 -crf 30 -row-mt 1 -threads 0",
-            VideoCodec.H264Mp4 => "-c:v libx264 -pix_fmt yuv420p -preset medium -crf 18 -movflags +faststart",
+            VideoCodec.Vp9Webm => "-c:v libvpx-vp9 -pix_fmt yuv420p -b:v 0 -crf 32 -deadline realtime -cpu-used 8 -row-mt 1 -threads 0",
+            VideoCodec.H264Mp4 => "-c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 20 -movflags +faststart",
             _ => throw new ArgumentOutOfRangeException(nameof(codec)),
         };
         return $"{input} {videoArgs} -an \"{output}\"";

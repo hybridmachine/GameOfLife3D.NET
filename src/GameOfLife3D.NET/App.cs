@@ -54,7 +54,10 @@ public sealed class App : IDisposable
 
     // Video recording
     private RecordingController? _recording;
-    private RecordingPanel? _recordingPanel;
+    private bool _ctrlRWasDown;
+    private string? _pendingTempPath;
+    private VideoCodec _pendingCodec;
+    private double _recordingStatusUntil;
 
     public void Run()
     {
@@ -174,35 +177,6 @@ public sealed class App : IDisposable
 
         // Initialize video recording
         _recording = new RecordingController();
-        _recordingPanel = new RecordingPanel
-        {
-            CurrentCameraStateProvider = () => _camera!.GetState(),
-            FramebufferSizeProvider = () => (_window!.FramebufferSize.X, _window.FramebufferSize.Y),
-            Controller = _recording,
-        };
-        _recordingPanel.OnStartRecording = (settings, keyframes) =>
-        {
-            try
-            {
-                if (_cinematic?.IsActive == true)
-                {
-                    _cinematic.Stop();
-                    _ui!.IsCinematicModeActive = false;
-                }
-                // Force capture dimensions to match the live composite FBO — the resolution
-                // dropdown is informational; actually resizing the render target is a future step.
-                int fbW = _renderer!.PostProcess!.Width;
-                int fbH = _renderer.PostProcess.Height;
-                _recording.Begin(settings with { Width = fbW, Height = fbH }, keyframes, _camera!, _engine!, _ui!);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Failed to start recording: {ex.Message}");
-                _recordingPanel.LastErrorMessage = ex.Message;
-            }
-        };
-        _recordingPanel.OnCancelRecording = () => _recording.Cancel();
-        _ui.OnOpenRecordingPanel = () => _recordingPanel!.Visible = true;
 
         // Wire mouse clicks for editing
         foreach (var mouse in _input.Mice)
@@ -264,61 +238,43 @@ public sealed class App : IDisposable
             return;
 
         bool recording = _recording?.IsActive == true;
+        // During recording, drive the world with a deterministic 1/fps clock so output is frame-accurate.
+        // Otherwise camera/playback/cinematic all behave normally — the recording captures whatever the user does.
         double frameDelta = recording ? _recording!.Clock.FrameDelta : deltaTime;
         double currentTime = recording ? _recording!.CurrentRecordingTime : _window!.Time;
 
         // Update ImGui
         _imGuiController.Update((float)frameDelta);
 
-        // Check ImGui capture state. During recording, suppress ImGui input capture so the camera
-        // path drives unimpeded — the only ImGui surface allowed is the recording overlay.
         var io = ImGui.GetIO();
-        if (recording)
+        _camera.SetImGuiCapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
+
+        // Handle cinematic mode shortcuts (always active, even during WantCaptureKeyboard)
+        HandleCinematicShortcuts(currentTime);
+
+        // Handle keyboard shortcuts (blocked during cinematic mode and ImGui keyboard capture)
+        if (!io.WantCaptureKeyboard && !(_cinematic?.IsActive ?? false))
         {
-            _camera.SetImGuiCapture(false, false);
+            HandleKeyboardShortcuts();
         }
         else
         {
-            _camera.SetImGuiCapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
+            _spaceWasDown = false;
+            _f12WasDown = false;
+            _eWasDown = false;
+            _leftBracketWasDown = false;
+            _rightBracketWasDown = false;
+            _rWasDown = false;
+            _escWasDown = false;
+            _zeroWasDown = false;
+            _fWasDown = false;
+            _ctrlRWasDown = false;
         }
 
-        if (!recording)
-        {
-            // Handle cinematic mode shortcuts (always active, even during WantCaptureKeyboard)
-            HandleCinematicShortcuts(currentTime);
-
-            // Handle keyboard shortcuts (blocked during cinematic mode)
-            if (!io.WantCaptureKeyboard && !(_cinematic?.IsActive ?? false))
-            {
-                HandleKeyboardShortcuts();
-            }
-            else
-            {
-                _spaceWasDown = false;
-                _f12WasDown = false;
-                _eWasDown = false;
-                _leftBracketWasDown = false;
-                _rightBracketWasDown = false;
-                _rWasDown = false;
-                _escWasDown = false;
-                _zeroWasDown = false;
-                _fWasDown = false;
-            }
-        }
-
-        // Update systems
-        if (recording)
-        {
-            _recording!.Tick();           // advances generation scrub
-            _camera.Update((float)frameDelta);
-            // Skip _ui.Tick (no playback) and _cinematic.Update (mutually exclusive with recording).
-        }
-        else
-        {
-            _camera.Update((float)frameDelta);
-            _ui.Tick(currentTime);
-            _cinematic?.Update(currentTime);
-        }
+        // Update systems — same path whether recording or not.
+        _camera.Update((float)frameDelta);
+        _ui.Tick(currentTime);
+        _cinematic?.Update(currentTime);
         _ui.StatusBar.UpdateFPS(currentTime);
 
         // Update renderer with current generations
@@ -339,26 +295,47 @@ public sealed class App : IDisposable
                 var pixels = _renderer.PostProcess!.ReadFinalPixels();
                 _recording!.WriteFrame(pixels);
                 _recording.AdvanceFrame();
-                if (_recording.IsComplete)
+
+                _ui.IsRecording = _recording.IsActive;
+                _ui.RecordingProgress01 = _recording.TotalFrames > 0
+                    ? Math.Clamp(_recording.CurrentFrame / (double)_recording.TotalFrames, 0.0, 1.0)
+                    : 0.0;
+
+                // WriteFrame catches encoder errors internally and deactivates. Surface that here.
+                if (!_recording.IsActive && !_recording.IsComplete)
+                {
+                    string err = _recording.LastError ?? "encoder failed";
+                    Console.Error.WriteLine($"Recording aborted: {err}");
+                    _ui.IsRecording = false;
+                    _ui.RecordingProgress01 = 0.0;
+                    _pendingTempPath = null; // encoder.Cancel already deleted the file
+                    SetRecordingStatus($"Recording failed: {err}", currentTime, 8.0);
+                }
+                else if (_recording.IsComplete)
                 {
                     _recording.Finish();
-                    Console.WriteLine($"Recording complete: {_recording.Settings?.OutputPath}");
+                    _ui.IsRecording = false;
+                    _ui.RecordingProgress01 = 0.0;
+                    PromptSaveAndMove();
                 }
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Recording frame failed: {ex.Message}");
                 _recording?.Cancel();
+                _ui.IsRecording = false;
+                _ui.RecordingProgress01 = 0.0;
+                CleanupTempFile();
+                SetRecordingStatus($"Recording failed: {ex.Message}", currentTime, 8.0);
             }
         }
 
-        // Render ImGui UI (suppress main panel during recording when HUD is hidden)
-        bool hideHud = recording && (_recording!.Settings?.HideHud ?? true);
-        if (!hideHud)
-        {
-            _ui.Render(logicalSize.X, logicalSize.Y);
-        }
-        _recordingPanel?.Render(logicalSize.X, logicalSize.Y);
+        // Expire status messages after their TTL.
+        if (_ui.RecordingStatusMessage != null && currentTime > _recordingStatusUntil)
+            _ui.RecordingStatusMessage = null;
+
+        // Render ImGui UI. Capture happens before ImGui draws, so the HUD is never in the recording.
+        _ui.Render(logicalSize.X, logicalSize.Y);
         _imGuiController.Render();
     }
 
@@ -372,6 +349,7 @@ public sealed class App : IDisposable
         bool rDown = false;
         bool escDown = false;
         bool zeroDown = false;
+        bool ctrlDown = false;
 
         foreach (var keyboard in _input!.Keyboards)
         {
@@ -383,7 +361,16 @@ public sealed class App : IDisposable
             if (keyboard.IsKeyPressed(Key.R)) rDown = true;
             if (keyboard.IsKeyPressed(Key.Escape)) escDown = true;
             if (keyboard.IsKeyPressed(Key.Number0) || keyboard.IsKeyPressed(Key.Keypad0)) zeroDown = true;
+            if (keyboard.IsKeyPressed(Key.ControlLeft) || keyboard.IsKeyPressed(Key.ControlRight) ||
+                keyboard.IsKeyPressed(Key.SuperLeft) || keyboard.IsKeyPressed(Key.SuperRight))
+                ctrlDown = true;
         }
+
+        // Ctrl+R: start recording (one-press capture). Suppresses the edit-mode 'R' rotation while held.
+        bool ctrlR = ctrlDown && rDown;
+        if (ctrlR && !_ctrlRWasDown)
+            StartRecording();
+        _ctrlRWasDown = ctrlR;
 
         // Space: play/pause
         if (spaceDown && !_spaceWasDown)
@@ -414,8 +401,8 @@ public sealed class App : IDisposable
             _editController.BrushSize = Math.Min(10, _editController.BrushSize + 1);
         _rightBracketWasDown = rightBracketDown;
 
-        // R: rotate pattern
-        if (rDown && !_rWasDown && _editController is { IsActive: true })
+        // R (without Ctrl): rotate pattern in edit mode
+        if (rDown && !_rWasDown && !ctrlDown && _editController is { IsActive: true })
             _editController.RotatePattern();
         _rWasDown = rDown;
 
@@ -569,6 +556,108 @@ public sealed class App : IDisposable
         }
     }
 
+    private void StartRecording()
+    {
+        if (_recording == null || _ui == null || _renderer?.PostProcess == null) return;
+        if (_recording.IsActive) return;
+
+        if (FfmpegEncoder.LocateBinary() == null)
+        {
+            SetRecordingStatus(FfmpegEncoder.InstallInstructions(), _window!.Time, 12.0);
+            Console.Error.WriteLine(FfmpegEncoder.InstallInstructions());
+            return;
+        }
+
+        VideoCodec codec = _ui.RecordingCodec;
+        string ext = FfmpegEncoder.CodecExtension(codec);
+        string tempPath = Path.Combine(
+            Path.GetTempPath(),
+            $"GameOfLife3D-recording-{DateTime.UtcNow:yyyyMMddHHmmssfff}{ext}");
+
+        var settings = new RecordingSettings
+        {
+            Codec = codec,
+            Fps = 60,
+            Width = _renderer.PostProcess.Width,
+            Height = _renderer.PostProcess.Height,
+            OutputPath = tempPath,
+            DurationSeconds = Math.Max(1, _ui.RecordingDurationSeconds),
+        };
+
+        try
+        {
+            _recording.Begin(settings);
+            _pendingTempPath = tempPath;
+            _pendingCodec = codec;
+            _ui.IsRecording = true;
+            _ui.RecordingProgress01 = 0.0;
+            SetRecordingStatus($"Recording {settings.DurationSeconds:F0} s…", _window!.Time, settings.DurationSeconds + 2.0);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to start recording: {ex.Message}");
+            SetRecordingStatus($"Failed to start recording: {ex.Message}", _window!.Time, 8.0);
+            try { File.Delete(tempPath); } catch { }
+        }
+    }
+
+    private void PromptSaveAndMove()
+    {
+        if (_pendingTempPath == null) return;
+        string tempPath = _pendingTempPath;
+        _pendingTempPath = null;
+
+        string ext = FfmpegEncoder.CodecExtension(_pendingCodec).TrimStart('.');
+        string? dest = null;
+        try
+        {
+            dest = FileDialogHelper.SaveFile(ext);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Save dialog failed: {ex.Message}");
+        }
+
+        if (dest == null)
+        {
+            try { File.Delete(tempPath); } catch { }
+            SetRecordingStatus("Recording discarded.", _window!.Time, 4.0);
+            return;
+        }
+
+        // Ensure correct extension on the destination.
+        string expectedExt = "." + ext;
+        if (!dest.EndsWith(expectedExt, StringComparison.OrdinalIgnoreCase))
+            dest += expectedExt;
+
+        try
+        {
+            File.Move(tempPath, dest, overwrite: true);
+            Console.WriteLine($"Recording saved: {dest}");
+            SetRecordingStatus($"Saved: {Path.GetFileName(dest)}", _window!.Time, 6.0);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to save recording: {ex.Message}");
+            SetRecordingStatus($"Save failed: {ex.Message}", _window!.Time, 8.0);
+            try { File.Delete(tempPath); } catch { }
+        }
+    }
+
+    private void CleanupTempFile()
+    {
+        if (_pendingTempPath == null) return;
+        try { File.Delete(_pendingTempPath); } catch { }
+        _pendingTempPath = null;
+    }
+
+    private void SetRecordingStatus(string message, double now, double ttlSeconds)
+    {
+        if (_ui == null) return;
+        _ui.RecordingStatusMessage = message;
+        _recordingStatusUntil = now + ttlSeconds;
+    }
+
     public void TakeScreenshot()
     {
         if (_renderer?.PostProcess == null) return;
@@ -593,6 +682,9 @@ public sealed class App : IDisposable
         {
             Console.Error.WriteLine("Window resized during recording — cancelling.");
             _recording.Cancel();
+            if (_ui != null) { _ui.IsRecording = false; _ui.RecordingProgress01 = 0.0; }
+            _pendingTempPath = null;
+            SetRecordingStatus("Recording cancelled (window resized).", _window?.Time ?? 0.0, 6.0);
         }
 
         _gl?.Viewport(size);
@@ -604,6 +696,9 @@ public sealed class App : IDisposable
 
     private void OnClosing()
     {
+        if (_recording?.IsActive == true) _recording.Cancel();
+        CleanupTempFile();
+
         _renderer?.Dispose();
         _imGuiController?.Dispose();
         _input?.Dispose();
