@@ -259,7 +259,8 @@ public sealed class FfmpegEncoder : IVideoEncoder
     }
 
     // Probes `ffmpeg -encoders` for libx264. Result is cached per binary path.
-    // Uses async output draining + WaitForExit(timeout) so a stalled or chatty ffmpeg can't hang the UI.
+    // Reads stdout/stderr with tasks so the process cannot block on full pipes, then waits for
+    // those tasks after exit so we do not race async OutputDataReceived callbacks.
     public static bool SupportsLibx264(string ffmpegPath)
     {
         if (_libx264Cached is bool cached && _probedBinaryPath == ffmpegPath) return cached;
@@ -270,21 +271,17 @@ public sealed class FfmpegEncoder : IVideoEncoder
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
-                Arguments = "-hide_banner -encoders",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
-            using var p = Process.Start(psi)!;
+            psi.ArgumentList.Add("-hide_banner");
+            psi.ArgumentList.Add("-encoders");
 
-            // Drain stdout/stderr asynchronously so the pipes never fill (which would deadlock the process).
-            var stdoutSb = new StringBuilder();
-            var stderrSb = new StringBuilder();
-            p.OutputDataReceived += (_, e) => { if (e.Data != null) lock (stdoutSb) stdoutSb.AppendLine(e.Data); };
-            p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (stderrSb) stderrSb.AppendLine(e.Data); };
-            p.BeginOutputReadLine();
-            p.BeginErrorReadLine();
+            using var p = Process.Start(psi)!;
+            var stdoutTask = p.StandardOutput.ReadToEndAsync();
+            var stderrTask = p.StandardError.ReadToEndAsync();
 
             if (!p.WaitForExit(3_000))
             {
@@ -293,7 +290,9 @@ public sealed class FfmpegEncoder : IVideoEncoder
             }
             else
             {
-                lock (stdoutSb) found = stdoutSb.ToString().Contains("libx264", StringComparison.Ordinal);
+                string stdout = stdoutTask.GetAwaiter().GetResult();
+                string stderr = stderrTask.GetAwaiter().GetResult();
+                found = ContainsEncoder(stdout, "libx264") || ContainsEncoder(stderr, "libx264");
             }
         }
         catch
@@ -304,6 +303,17 @@ public sealed class FfmpegEncoder : IVideoEncoder
         _libx264Cached = found;
         _probedBinaryPath = ffmpegPath;
         return found;
+    }
+
+    private static bool ContainsEncoder(string encoderList, string encoderName)
+    {
+        foreach (string line in encoderList.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2 && parts[1].Equals(encoderName, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
     }
 
     public static string CodecExtension(VideoCodec codec) => codec switch
