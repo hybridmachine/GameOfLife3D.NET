@@ -97,8 +97,6 @@ public sealed class ImGuiUI
     private const float ControlPanelSlideSpeed = 8f;
     private const float ControlPanelToggleSize = 34f;
     private const float ControlPanelToggleGap = 25f;
-    private static float TimelineBarHeight => Math.Max(64f, ImGui.GetTextLineHeightWithSpacing() * 2f + 26f);
-    private static float StatusBarHeight => Math.Max(30f, ImGui.GetTextLineHeight() + 20f);
     private const float TimelineToggleSize = 30f;
     private const float TimelineToggleMargin = 10f;
 
@@ -501,9 +499,9 @@ public sealed class ImGuiUI
 
     private void RenderTimelineToggle(int windowHeight)
     {
-        float toggleY = windowHeight - StatusBarHeight - TimelineToggleSize - TimelineToggleMargin;
+        float toggleY = windowHeight - UILayoutMetrics.StatusBarHeight - TimelineToggleSize - TimelineToggleMargin;
         if (_isTimelineVisible)
-            toggleY -= TimelineBarHeight;
+            toggleY -= UILayoutMetrics.TimelineBarHeight;
 
         ImGui.SetNextWindowPos(new Vector2(TimelineToggleMargin, toggleY), ImGuiCond.Always);
         ImGui.SetNextWindowSize(new Vector2(TimelineToggleSize, TimelineToggleSize), ImGuiCond.Always);
