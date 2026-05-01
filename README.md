@@ -71,4 +71,4 @@ The RuntimeIdentifier is auto-detected (`win-x64` on Windows, `linux-x64` on Lin
 
 ## License
 
-See repository root for license information.
+This project is licensed under the [MIT License](LICENSE).
