@@ -8,6 +8,8 @@ A 3D visualization of Conway's Game of Life built with .NET 10, Silk.NET, and Op
 
 [![Watch GameOfLife3D.NET in action](https://img.youtube.com/vi/RZm2I0u-v6c/maxresdefault.jpg)](https://youtu.be/RZm2I0u-v6c)
 
+[![Watch another GameOfLife3D.NET video](https://img.youtube.com/vi/Vt_7OvSU8Oo/maxresdefault.jpg)](https://youtu.be/Vt_7OvSU8Oo)
+
 ## Features
 
 - **3D generation stacking** — 2D Game of Life computed across generations, rendered as cubes (X=column, Y=generation, Z=row)
