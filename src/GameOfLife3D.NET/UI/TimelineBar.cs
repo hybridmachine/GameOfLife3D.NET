@@ -54,8 +54,8 @@ public sealed class TimelineBar
 
     public void Render(int windowWidth, int windowHeight)
     {
-        float barHeight = 64f;
-        float statusBarHeight = 30f;
+        float barHeight = UILayoutMetrics.TimelineBarHeight;
+        float statusBarHeight = UILayoutMetrics.StatusBarHeight;
         float barY = windowHeight - barHeight - statusBarHeight;
 
         ImGui.SetNextWindowPos(new Vector2(0, barY));

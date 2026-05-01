@@ -90,12 +90,13 @@ public sealed class ImGuiUI
     private bool _isControlPanelOpen;
     private float _controlPanelSlide;
     private bool _isTimelineVisible = true;
+    private float _fontSize = UiSettingsState.BaseFontSize;
+    private float _automaticFontSize = UiSettingsState.BaseFontSize;
+    private bool _isFontSizeAutomatic = true;
     private const float ControlPanelMargin = 10f;
     private const float ControlPanelSlideSpeed = 8f;
     private const float ControlPanelToggleSize = 34f;
     private const float ControlPanelToggleGap = 25f;
-    private const float TimelineBarHeight = 64f;
-    private const float StatusBarHeight = 30f;
     private const float TimelineToggleSize = 30f;
     private const float TimelineToggleMargin = 10f;
 
@@ -143,6 +144,8 @@ public sealed class ImGuiUI
     public Action<string>? OnExportSTL { get; set; }
     public Action<string>? OnExportOBJ { get; set; }
     public Action<string>? OnExportRLE { get; set; }
+    public Action<float>? OnFontSizeChanged { get; set; }
+    public Action? OnFontSizeReset { get; set; }
 
     public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, PatternLibrary patternLibrary, EditingController? editController = null)
     {
@@ -246,6 +249,13 @@ public sealed class ImGuiUI
         _displayEnd = Math.Clamp(end, _displayStart, maxGen);
         _timeline.SetTotalGenerations(_engine.GenerationCount);
         _timeline.SetRange(_displayStart, _displayEnd);
+    }
+
+    public void SetFontSizeState(float currentFontSize, float automaticFontSize, bool isAutomatic)
+    {
+        _fontSize = UiSettingsState.ClampFontSize(currentFontSize);
+        _automaticFontSize = UiSettingsState.ClampFontSize(automaticFontSize);
+        _isFontSizeAutomatic = isAutomatic;
     }
 
     public void StartCinematicHint(double currentTime)
@@ -383,10 +393,12 @@ public sealed class ImGuiUI
             return;
 
         float panelY = ControlPanelMargin + ControlPanelToggleSize + ControlPanelToggleGap;
-        float panelWidth = Math.Clamp(windowWidth * 0.22f, 260, 400);
+        float minPanelWidth = Math.Max(280f, ImGui.GetTextLineHeight() * 16f);
+        float panelWidth = Math.Clamp(windowWidth * 0.24f, minPanelWidth, 480);
         float maxPanelHeight = Math.Max(200f, windowHeight - panelY - 20f);
         float minPanelHeight = Math.Min(300f, maxPanelHeight);
         float panelHeight = Math.Clamp(windowHeight * 0.7f, minPanelHeight, maxPanelHeight);
+        float maxPanelWidth = Math.Max(minPanelWidth, windowWidth * 0.35f);
         float openX = windowWidth - panelWidth - ControlPanelMargin;
         float closedX = windowWidth + 2f;
         float panelX = closedX + (openX - closedX) * _controlPanelSlide;
@@ -394,8 +406,8 @@ public sealed class ImGuiUI
         ImGui.SetNextWindowPos(new Vector2(panelX, panelY), ImGuiCond.Always);
         ImGui.SetNextWindowSize(new Vector2(panelWidth, panelHeight), ImGuiCond.Always);
         ImGui.SetNextWindowSizeConstraints(
-            new Vector2(260, 200),
-            new Vector2(windowWidth * 0.35f, Math.Max(200f, windowHeight - panelY - 20f)));
+            new Vector2(minPanelWidth, 200),
+            new Vector2(maxPanelWidth, Math.Max(200f, windowHeight - panelY - 20f)));
 
         if (ImGui.Begin("Game of Life 3D", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove))
         {
@@ -487,9 +499,9 @@ public sealed class ImGuiUI
 
     private void RenderTimelineToggle(int windowHeight)
     {
-        float toggleY = windowHeight - StatusBarHeight - TimelineToggleSize - TimelineToggleMargin;
+        float toggleY = windowHeight - UILayoutMetrics.StatusBarHeight - TimelineToggleSize - TimelineToggleMargin;
         if (_isTimelineVisible)
-            toggleY -= TimelineBarHeight;
+            toggleY -= UILayoutMetrics.TimelineBarHeight;
 
         ImGui.SetNextWindowPos(new Vector2(TimelineToggleMargin, toggleY), ImGuiCond.Always);
         ImGui.SetNextWindowSize(new Vector2(TimelineToggleSize, TimelineToggleSize), ImGuiCond.Always);
@@ -849,6 +861,9 @@ public sealed class ImGuiUI
             var settings = _renderer.Settings;
             float fullWidth = ImGui.GetContentRegionAvail().X;
 
+            RenderFontSizeControls(fullWidth);
+            UIHelpers.ThinSeparator();
+
             // ── Geometry ──
             ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
             ImGui.Text("Geometry");
@@ -1000,6 +1015,45 @@ public sealed class ImGuiUI
                     settings.BloomIntensity = _bloomIntensity;
             }
         }
+    }
+
+    private void RenderFontSizeControls(float fullWidth)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        ImGui.Text("UI");
+        ImGui.PopStyleColor();
+
+        string mode = _isFontSizeAutomatic ? "auto" : "custom";
+        UIHelpers.LabelValue("Font Size:", $"{_fontSize:F0}px ({mode})");
+
+        float spacing = ImGui.GetStyle().ItemSpacing.X;
+        float buttonWidth = (fullWidth - spacing * 2f) / 3f;
+
+        bool atMin = _fontSize <= UiSettingsState.MinFontSize + 0.001f;
+        if (atMin) ImGui.BeginDisabled();
+        if (ImGui.Button("-##font_size", new Vector2(buttonWidth, 0)))
+            OnFontSizeChanged?.Invoke(_fontSize - UiSettingsState.FontSizeStep);
+        if (atMin) ImGui.EndDisabled();
+        UIHelpers.Tooltip("Decrease UI font size");
+
+        ImGui.SameLine();
+        bool atMax = _fontSize >= UiSettingsState.MaxFontSize - 0.001f;
+        if (atMax) ImGui.BeginDisabled();
+        if (ImGui.Button("+##font_size", new Vector2(buttonWidth, 0)))
+            OnFontSizeChanged?.Invoke(_fontSize + UiSettingsState.FontSizeStep);
+        if (atMax) ImGui.EndDisabled();
+        UIHelpers.Tooltip("Increase UI font size");
+
+        ImGui.SameLine();
+        if (_isFontSizeAutomatic) ImGui.BeginDisabled();
+        if (ImGui.Button("Auto##font_size", new Vector2(buttonWidth, 0)))
+            OnFontSizeReset?.Invoke();
+        if (_isFontSizeAutomatic) ImGui.EndDisabled();
+        UIHelpers.Tooltip("Reset to resolution-based automatic font size");
+
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+        ImGui.TextWrapped($"Auto for this resolution: {_automaticFontSize:F0}px");
+        ImGui.PopStyleColor();
     }
 
     private void RenderEditingSection()
