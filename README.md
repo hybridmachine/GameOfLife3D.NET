@@ -29,13 +29,6 @@ A 3D visualization of Conway's Game of Life built with .NET 10, Silk.NET, and Op
 | 0 | Restart auto orbit |
 | Space | Play / Pause |
 
-## Download
-
-Pre-built self-contained executables (no .NET runtime required):
-
-- [**Windows x64**](https://github.com/hybridmachine/ClaudeAssistedProjects/releases/tag/v1.0.0) — `GameOfLife3D.NET.exe`
-- [**Linux x64**](https://github.com/hybridmachine/ClaudeAssistedProjects/releases/tag/v1.0.0) — `GameOfLife3D.NET-linux-x64`
-
 ## Build from Source
 
 Requires [.NET 10 SDK](https://dotnet.microsoft.com/download).
