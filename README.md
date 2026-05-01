@@ -2,7 +2,7 @@
 
 A 3D visualization of Conway's Game of Life built with .NET 10, Silk.NET, and OpenGL 3.3. Each alive cell is rendered as a cube in 3D space, with generations stacking along the Y axis to create a sculptural time history of the simulation.
 
-![GameOfLife3D.NET in action](resources/GameOfLife3D.NET.png)
+![GameOfLife3D.NET in action](example.png)
 
 ## Features
 
