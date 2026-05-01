@@ -34,6 +34,8 @@ public sealed class App : IDisposable
     private GridRayCaster? _rayCaster;
 
     private float _dpiScale = 1.0f;
+    private UiSettingsState _uiSettings = new();
+    private float _currentFontSize = UiSettingsState.BaseFontSize;
     private double _startTime;
     private bool _spaceWasDown;
     private bool _f12WasDown;
@@ -87,11 +89,13 @@ public sealed class App : IDisposable
             _dpiScale = DpiHelper.GetSystemDpiScale();
         _dpiScale = Math.Max(1.0f, _dpiScale);
 
+        _uiSettings = UiSettingsState.Load();
+
         _imGuiController = new ImGuiController(_gl, _window, _input, onConfigureIO: () =>
         {
             var io = ImGui.GetIO();
             io.Fonts.Clear();
-            float fontSize = 14.0f * _dpiScale;
+            float fontSize = UiSettingsState.FontAtlasLogicalSize * _dpiScale;
             unsafe
             {
                 // Load the primary system font with basic Unicode coverage
@@ -127,8 +131,7 @@ public sealed class App : IDisposable
             }
         });
 
-        // Scale font rendering back to logical pixel size (atlas is high-res for crispness)
-        ImGui.GetIO().FontGlobalScale = 1.0f / _dpiScale;
+        ApplyFontScale();
 
         // Apply the centralized UI theme (colors and base geometry, no DPI scaling needed)
         Theme.Apply();
@@ -171,6 +174,9 @@ public sealed class App : IDisposable
         _ui.OnExportSTL = path => ExportModel(path, "stl");
         _ui.OnExportOBJ = path => ExportModel(path, "obj");
         _ui.OnExportRLE = ExportRLE;
+        _ui.OnFontSizeChanged = SetFontSizeOverride;
+        _ui.OnFontSizeReset = ResetFontSizeToAutomatic;
+        SyncFontSizeState();
 
         // Initialize cinematic controller
         _cinematic = new CinematicController(_engine, _camera, _ui, _renderer);
@@ -242,6 +248,9 @@ public sealed class App : IDisposable
         // Otherwise camera/playback/cinematic all behave normally — the recording captures whatever the user does.
         double frameDelta = recording ? _recording!.Clock.FrameDelta : deltaTime;
         double currentTime = recording ? _recording!.CurrentRecordingTime : _window!.Time;
+
+        ApplyFontScale();
+        SyncFontSizeState();
 
         // Update ImGui
         _imGuiController.Update((float)frameDelta);
@@ -340,6 +349,44 @@ public sealed class App : IDisposable
         // Render ImGui UI. Capture happens before ImGui draws, so the HUD is never in the recording.
         _ui.Render(logicalSize.X, logicalSize.Y);
         _imGuiController.Render();
+    }
+
+    private void SetFontSizeOverride(float fontSize)
+    {
+        _uiSettings.FontSize = UiSettingsState.ClampFontSize(fontSize);
+        _uiSettings.Save();
+        ApplyFontScale();
+        SyncFontSizeState();
+    }
+
+    private void ResetFontSizeToAutomatic()
+    {
+        _uiSettings.FontSize = null;
+        _uiSettings.Save();
+        ApplyFontScale();
+        SyncFontSizeState();
+    }
+
+    private void ApplyFontScale()
+    {
+        if (_window == null || _dpiScale <= 0f)
+            return;
+
+        var fbSize = _window.FramebufferSize;
+        _currentFontSize = _uiSettings.GetEffectiveFontSize(fbSize.X, fbSize.Y);
+        ImGui.GetIO().FontGlobalScale = _currentFontSize / (UiSettingsState.FontAtlasLogicalSize * _dpiScale);
+    }
+
+    private void SyncFontSizeState()
+    {
+        if (_window == null || _ui == null)
+            return;
+
+        var fbSize = _window.FramebufferSize;
+        _ui.SetFontSizeState(
+            _currentFontSize,
+            UiSettingsState.GetAutomaticFontSize(fbSize.X, fbSize.Y),
+            _uiSettings.IsFontSizeAutomatic);
     }
 
     private void HandleRecordingShortcut()

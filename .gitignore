@@ -44,6 +44,9 @@ bld/
 signing/signing-config.json
 signing/macOS/macos-signing-config.json
 
+## imgui.ini 
+imgui.ini
+
 ## Build output
 build/
 
