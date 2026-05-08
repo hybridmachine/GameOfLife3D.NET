@@ -83,15 +83,17 @@ public sealed class ReflectiveFloorRenderer : IDisposable
 
     private unsafe void CreateQuad()
     {
-        // Two triangles spanning XZ ∈ [-1, 1].
+        // Two triangles spanning XZ ∈ [-1, 1]. Wound CCW when viewed from +Y
+        // (camera above) so the floor's front face is up — otherwise default
+        // back-face culling hides it from any top-down angle.
         float[] verts =
         [
             -1f, -1f,
-             1f, -1f,
+            -1f,  1f,
              1f,  1f,
             -1f, -1f,
              1f,  1f,
-            -1f,  1f,
+             1f, -1f,
         ];
 
         _quadVao = _gl.GenVertexArray();
