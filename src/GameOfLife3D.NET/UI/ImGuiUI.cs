@@ -311,7 +311,7 @@ public sealed class ImGuiUI
         // Recording indicator is drawn on the foreground draw list, which renders after the
         // post-bloom composite is captured — so it is visible to the user but never in the file.
         if (IsRecording)
-            RenderRecordingIndicator(windowWidth);
+            RenderRecordingIndicator();
 
         if (IsCinematicModeActive)
         {
@@ -326,20 +326,20 @@ public sealed class ImGuiUI
         _statusBar.ShowEditBadge = _editController?.IsActive ?? false;
         _statusBar.Render(_displayStart, _displayEnd, _engine.RuleString,
             _renderer.GetVisibleCellCount(), windowWidth, windowHeight);
-        RenderControlPanelToggle(windowWidth);
+        RenderControlPanelToggle();
         RenderTimelineToggle(windowHeight);
     }
 
-    private void RenderRecordingIndicator(int windowWidth)
+    private void RenderRecordingIndicator()
     {
         var drawList = ImGui.GetForegroundDrawList();
 
-        // Position: just left of the gear toggle, vertically centered with it.
-        float gearLeftX = windowWidth - ControlPanelToggleSize - ControlPanelMargin;
+        // Position: just right of the gear toggle, vertically centered with it.
+        float gearRightX = ControlPanelMargin + ControlPanelToggleSize;
         float gearCenterY = ControlPanelMargin + ControlPanelToggleSize * 0.5f;
         float radius = 7f;
         float gap = 10f;
-        var center = new Vector2(gearLeftX - gap - radius, gearCenterY);
+        var center = new Vector2(gearRightX + gap + radius, gearCenterY);
 
         // ~1 Hz blink driven by the active clock (wall-clock or recording clock — either is fine).
         bool on = (int)(_lastTickTime * 2.0) % 2 == 0;
@@ -415,8 +415,8 @@ public sealed class ImGuiUI
         float minPanelHeight = Math.Min(300f, maxPanelHeight);
         float panelHeight = Math.Clamp(windowHeight * 0.7f, minPanelHeight, maxPanelHeight);
         float maxPanelWidth = Math.Max(minPanelWidth, windowWidth * 0.35f);
-        float openX = windowWidth - panelWidth - ControlPanelMargin;
-        float closedX = windowWidth + 2f;
+        float openX = ControlPanelMargin;
+        float closedX = -panelWidth - 2f;
         float panelX = closedX + (openX - closedX) * _controlPanelSlide;
 
         ImGui.SetNextWindowPos(new Vector2(panelX, panelY), ImGuiCond.Always);
@@ -444,10 +444,10 @@ public sealed class ImGuiUI
         ImGui.End();
     }
 
-    private void RenderControlPanelToggle(int windowWidth)
+    private void RenderControlPanelToggle()
     {
         ImGui.SetNextWindowPos(
-            new Vector2(windowWidth - ControlPanelToggleSize - ControlPanelMargin, ControlPanelMargin),
+            new Vector2(ControlPanelMargin, ControlPanelMargin),
             ImGuiCond.Always);
         ImGui.SetNextWindowSize(new Vector2(ControlPanelToggleSize, ControlPanelToggleSize), ImGuiCond.Always);
         ImGui.SetNextWindowBgAlpha(0f);
