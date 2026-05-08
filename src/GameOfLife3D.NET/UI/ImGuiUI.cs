@@ -45,7 +45,12 @@ public sealed class ImGuiUI
     // edited the stops away from any built-in preset. The actual stop list
     // lives on RenderSettings.GradientStops — we don't mirror it here.
     private string? _gradientPreset;
-    private bool _showGridLines;
+    private int _floorModeIdx; // 0=Off, 1=Grid, 2=Reflective — index into FloorModeLabels
+    private float _waveStrength;
+    private float _waveSpeed;
+    private Vector3 _waterTint;
+    private float _reflectivity;
+    private float _reflectionResolutionScale;
     private bool _showGenerationLabels;
     private bool _showWireframe;
     private bool _toroidal = true;
@@ -180,7 +185,12 @@ public sealed class ImGuiUI
         _faceColorCycling = settings.FaceColorCycling;
         _edgeColorCycling = settings.EdgeColorCycling;
         _edgeColorAngle = settings.EdgeColorAngle;
-        _showGridLines = settings.ShowGridLines;
+        _floorModeIdx = (int)settings.FloorMode;
+        _waveStrength = settings.WaveStrength;
+        _waveSpeed = settings.WaveSpeed;
+        _waterTint = settings.WaterTint;
+        _reflectivity = settings.Reflectivity;
+        _reflectionResolutionScale = settings.ReflectionResolutionScale;
         _showGenerationLabels = settings.ShowGenerationLabels;
         _showWireframe = settings.ShowWireframe;
         _gradientPreset = GradientPresets.Match(settings.GradientStops);
@@ -885,8 +895,19 @@ public sealed class ImGuiUI
             if (ImGui.Checkbox("Wireframe", ref _showWireframe))
                 settings.ShowWireframe = _showWireframe;
 
-            if (ImGui.Checkbox("Grid Lines", ref _showGridLines))
-                settings.ShowGridLines = _showGridLines;
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Floor");
+            ImGui.PopStyleColor();
+            string[] floorModes = ["Off", "Grid Lines", "Reflective"];
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.Combo("##floormode", ref _floorModeIdx, floorModes, floorModes.Length))
+                settings.FloorMode = (FloorMode)_floorModeIdx;
+            UIHelpers.Tooltip("Off — no floor; Grid Lines — classic grid; Reflective — animated water surface that reflects the cubes.");
+
+            if (settings.FloorMode == FloorMode.Reflective)
+            {
+                RenderReflectiveFloorControls(settings, fullWidth);
+            }
 
             if (ImGui.Checkbox("Generation Labels", ref _showGenerationLabels))
                 settings.ShowGenerationLabels = _showGenerationLabels;
@@ -1026,6 +1047,47 @@ public sealed class ImGuiUI
                     settings.BloomIntensity = _bloomIntensity;
             }
         }
+    }
+
+    /// <summary>
+    /// Sub-controls shown when the reflective floor is active. Tucked into a
+    /// collapsible tree node so the Appearance section doesn't grow noisy for
+    /// users who just want the default water look.
+    /// </summary>
+    private void RenderReflectiveFloorControls(RenderSettings settings, float fullWidth)
+    {
+        ImGui.Indent();
+        if (ImGui.TreeNodeEx("Water Tuning", ImGuiTreeNodeFlags.None))
+        {
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.SliderFloat("##wavestr", ref _waveStrength, 0f, 1f, "Wave Strength: %.2f"))
+                settings.WaveStrength = _waveStrength;
+            UIHelpers.Tooltip("0 = perfect mirror; higher values give choppier ripples.");
+
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.SliderFloat("##wavespeed", ref _waveSpeed, 0f, 2f, "Wave Speed: %.2f"))
+                settings.WaveSpeed = _waveSpeed;
+
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.SliderFloat("##refl", ref _reflectivity, 0f, 1f, "Reflectivity: %.2f"))
+                settings.Reflectivity = _reflectivity;
+            UIHelpers.Tooltip("Schlick F0: how much the surface reflects when looked at straight-on. Glancing angles always reflect strongly.");
+
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.ColorEdit3("##watertint", ref _waterTint))
+                settings.WaterTint = _waterTint;
+            UIHelpers.Tooltip("Base water color blended underneath the reflection.");
+
+            ImGui.SetNextItemWidth(fullWidth);
+            if (ImGui.SliderFloat("##reflres", ref _reflectionResolutionScale, 0.25f, 1f, "Reflection Resolution: %.2fx"))
+            {
+                settings.ReflectionResolutionScale = _reflectionResolutionScale;
+            }
+            UIHelpers.Tooltip("Reflection texture size relative to the main view. Lower is faster but blurrier.");
+
+            ImGui.TreePop();
+        }
+        ImGui.Unindent();
     }
 
     /// <summary>
@@ -1494,7 +1556,12 @@ public sealed class ImGuiUI
         _edgeColorCycling = s.EdgeColorCycling;
         _edgeColorAngle = s.EdgeColorAngle;
         _gradientPreset = GradientPresets.Match(s.GradientStops);
-        _showGridLines = s.ShowGridLines;
+        _floorModeIdx = (int)s.FloorMode;
+        _waveStrength = s.WaveStrength;
+        _waveSpeed = s.WaveSpeed;
+        _waterTint = s.WaterTint;
+        _reflectivity = s.Reflectivity;
+        _reflectionResolutionScale = s.ReflectionResolutionScale;
         _showGenerationLabels = s.ShowGenerationLabels;
         _showWireframe = s.ShowWireframe;
         _fogEnabled = s.FogEnabled;

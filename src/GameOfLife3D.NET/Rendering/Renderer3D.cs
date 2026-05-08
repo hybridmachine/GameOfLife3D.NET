@@ -6,12 +6,19 @@ namespace GameOfLife3D.NET.Rendering;
 
 public sealed class Renderer3D : IDisposable
 {
+    // Above this instance count we skip the reflection pass and render the
+    // floor as flat tinted water. Matches InstancedCubeRenderer's beveled-cube
+    // cutoff so the visual fidelity drop happens at one consistent threshold.
+    private const int ReflectionMaxInstances = 500_000;
+
     private readonly GL _gl;
     private ShaderProgram? _cubeShader;
     private ShaderProgram? _wireframeShader;
     private ShaderProgram? _gridShader;
+    private ShaderProgram? _floorShader;
     private InstancedCubeRenderer? _instancedRenderer;
     private GridRenderer? _gridRenderer;
+    private ReflectiveFloorRenderer? _floorRenderer;
     private PostProcessPipeline? _postProcess;
     private BloomEffect? _bloom;
 
@@ -42,12 +49,15 @@ public sealed class Renderer3D : IDisposable
         _cubeShader = ShaderProgram.FromEmbeddedResources(_gl, "cube.vert", "cube.frag");
         _wireframeShader = ShaderProgram.FromEmbeddedResources(_gl, "wireframe.vert", "wireframe.frag");
         _gridShader = ShaderProgram.FromEmbeddedResources(_gl, "grid.vert", "grid.frag");
+        _floorShader = ShaderProgram.FromEmbeddedResources(_gl, "floor.vert", "floor.frag");
 
         _instancedRenderer = new InstancedCubeRenderer(_gl);
         _instancedRenderer.Initialize();
 
         _gridRenderer = new GridRenderer(_gl);
         _gridRenderer.UpdateGrid(_gridSize);
+
+        _floorRenderer = new ReflectiveFloorRenderer(_gl);
     }
 
     public void InitializePostProcess(int width, int height)
@@ -57,12 +67,15 @@ public sealed class Renderer3D : IDisposable
 
         _bloom = new BloomEffect(_gl);
         _bloom.Initialize(width, height);
+
+        _floorRenderer?.Initialize(width, height, _settings.ReflectionResolutionScale);
     }
 
     public void ResizePostProcess(int width, int height)
     {
         _postProcess?.Resize(width, height);
         _bloom?.Resize(width, height);
+        _floorRenderer?.Resize(width, height, _settings.ReflectionResolutionScale);
     }
 
     public void SetGridSize(int size)
@@ -151,22 +164,53 @@ public sealed class Renderer3D : IDisposable
 
         bool useFBO = _postProcess != null;
 
-        // Begin FBO scene if available
+        float cycleTime = 5.0f;
+        float normalizedTime = (float)(currentTime % cycleTime) / cycleTime;
+        float range = _lastMaxY - _lastMinY;
+        float time = normalizedTime * range;
+
+        // ── Reflection pass ────────────────────────────────────────────────
+        // Render cubes into the reflection FBO with a Y-mirrored view; the
+        // floor fragment shader will sample this texture later. Skipped when
+        // reflective floor isn't selected, when too many cubes would make the
+        // double-render too costly, or when the floor renderer hasn't been
+        // initialized yet (pre-FBO setup).
+        bool wantsReflection = _settings.FloorMode == FloorMode.Reflective
+                            && _floorRenderer != null
+                            && _floorShader != null
+                            && _currentInstanceCount <= ReflectionMaxInstances;
+
+        if (wantsReflection)
+        {
+            _floorRenderer!.EnsureScale(_settings.ReflectionResolutionScale);
+            Vector3 reflectClear = _settings.FogEnabled ? _settings.FogColor : new Vector3(0.02f, 0.03f, 0.05f);
+            _floorRenderer.BeginReflectionPass(reflectClear);
+
+            Matrix4x4 mirroredView = ReflectiveFloorRenderer.MirrorViewAcrossFloor(view);
+
+            _cubeShader.Use();
+            _cubeShader.SetUniform("uMinY", _lastMinY);
+            _cubeShader.SetUniform("uMaxY", _lastMaxY);
+
+            _gl.Enable(EnableCap.DepthTest);
+            _instancedRenderer.RenderSolid(_cubeShader, mirroredView, proj, time, _settings);
+
+            _floorRenderer.EndReflectionPass();
+        }
+
+        // ── Main scene ─────────────────────────────────────────────────────
         if (useFBO)
         {
             _postProcess!.BeginScene(_settings, view, proj);
         }
         else
         {
+            _gl.Viewport(0, 0, (uint)screenWidth, (uint)screenHeight);
             _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         }
 
-        float cycleTime = 5.0f;
-        float normalizedTime = (float)(currentTime % cycleTime) / cycleTime;
-        float range = _lastMaxY - _lastMinY;
-        float time = normalizedTime * range;
-
-        // Set Y range uniforms
+        // Set Y range uniforms (after BeginScene to avoid being shadowed by any
+        // shader binds the background pass might do).
         _cubeShader.Use();
         _cubeShader.SetUniform("uMinY", _lastMinY);
         _cubeShader.SetUniform("uMaxY", _lastMaxY);
@@ -191,13 +235,33 @@ public sealed class Renderer3D : IDisposable
             _gl.Disable(EnableCap.Blend);
         }
 
-        // Render grid
-        if (_settings.ShowGridLines)
+        // ── Floor (Grid / Reflective / Off) ────────────────────────────────
+        switch (_settings.FloorMode)
         {
-            _gl.Enable(EnableCap.Blend);
-            _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-            _gridRenderer!.Render(_gridShader, view, proj);
-            _gl.Disable(EnableCap.Blend);
+            case FloorMode.Grid:
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                _gridRenderer!.Render(_gridShader, view, proj);
+                _gl.Disable(EnableCap.Blend);
+                break;
+
+            case FloorMode.Reflective when _floorRenderer != null && _floorShader != null:
+                Vector3 cameraPos = ExtractCameraPosition(view);
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                // Don't write depth so cubes drawn earlier still occlude the
+                // floor naturally, and so a translucent water edge doesn't
+                // punch a hole in the depth buffer used by later effects.
+                _gl.DepthMask(false);
+                _floorRenderer.Render(_floorShader, view, proj, cameraPos, _gridSize, (float)currentTime,
+                    _settings, reflectionAvailable: wantsReflection);
+                _gl.DepthMask(true);
+                _gl.Disable(EnableCap.Blend);
+                break;
+
+            case FloorMode.Off:
+            default:
+                break;
         }
 
         // End FBO scene and composite
@@ -217,15 +281,29 @@ public sealed class Renderer3D : IDisposable
         }
     }
 
+    /// <summary>
+    /// World-space camera position is the translation column of the inverse
+    /// view matrix. Cheap and avoids threading the camera through every render
+    /// call site.
+    /// </summary>
+    private static Vector3 ExtractCameraPosition(Matrix4x4 view)
+    {
+        if (!Matrix4x4.Invert(view, out var inv))
+            return Vector3.Zero;
+        return new Vector3(inv.M41, inv.M42, inv.M43);
+    }
+
     public int GetVisibleCellCount() => _currentInstanceCount;
 
     public void Dispose()
     {
         _instancedRenderer?.Dispose();
         _gridRenderer?.Dispose();
+        _floorRenderer?.Dispose();
         _cubeShader?.Dispose();
         _wireframeShader?.Dispose();
         _gridShader?.Dispose();
+        _floorShader?.Dispose();
         _postProcess?.Dispose();
         _bloom?.Dispose();
     }

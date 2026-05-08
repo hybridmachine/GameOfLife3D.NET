@@ -32,7 +32,16 @@ public sealed class RenderSessionData
     public bool FaceColorCycling { get; set; }
     public bool EdgeColorCycling { get; set; }
     public float EdgeColorAngle { get; set; }
+
+    // Legacy: pre-floor-mode sessions only had a grid-lines toggle. Read on
+    // load as a fallback when no FloorMode is present (true -> Grid, false ->
+    // Off); not written by current saves.
     public bool ShowGridLines { get; set; }
+
+    // Floor selection (Off / Grid / Reflective). Nullable so loaders can tell
+    // "field absent" (legacy) from "field present with value 0 = Off".
+    public int? FloorMode { get; set; }
+
     public bool ShowGenerationLabels { get; set; }
     public bool ShowWireframe { get; set; }
     public float CellColorR { get; set; }
@@ -70,6 +79,16 @@ public sealed class RenderSessionData
 
     // Beveled cubes
     public bool UseBeveledCubes { get; set; }
+
+    // Reflective-floor / water tuning. Nullable so legacy sessions adopt the
+    // current code defaults instead of zero-filled values.
+    public float? WaveStrength { get; set; }
+    public float? WaveSpeed { get; set; }
+    public float? WaterTintR { get; set; }
+    public float? WaterTintG { get; set; }
+    public float? WaterTintB { get; set; }
+    public float? Reflectivity { get; set; }
+    public float? ReflectionResolutionScale { get; set; }
 
     // Face-cycling gradient stops, flattened RGB triples (length = 3 * stopCount).
     // Nullable for backward compatibility with sessions saved before the editor landed.
@@ -130,7 +149,11 @@ public static class SessionManager
         FaceColorCycling = s.FaceColorCycling,
         EdgeColorCycling = s.EdgeColorCycling,
         EdgeColorAngle = s.EdgeColorAngle,
-        ShowGridLines = s.ShowGridLines,
+        // ShowGridLines is intentionally not populated on save — the canonical
+        // field is now FloorMode. The property still exists on the data object
+        // so old session files can be read back via the legacy fallback path
+        // in ApplyRenderSettings.
+        FloorMode = (int)s.FloorMode,
         ShowGenerationLabels = s.ShowGenerationLabels,
         ShowWireframe = s.ShowWireframe,
         CellColorR = s.CellColor.X,
@@ -163,6 +186,14 @@ public static class SessionManager
         BloomIntensity = s.BloomIntensity,
         // Beveled cubes
         UseBeveledCubes = s.UseBeveledCubes,
+        // Reflective floor / water
+        WaveStrength = s.WaveStrength,
+        WaveSpeed = s.WaveSpeed,
+        WaterTintR = s.WaterTint.X,
+        WaterTintG = s.WaterTint.Y,
+        WaterTintB = s.WaterTint.Z,
+        Reflectivity = s.Reflectivity,
+        ReflectionResolutionScale = s.ReflectionResolutionScale,
         // Gradient stops (flatten R, G, B triples in order)
         GradientStops = FlattenStops(s.GradientStops),
     };
@@ -185,7 +216,18 @@ public static class SessionManager
         target.FaceColorCycling = data.FaceColorCycling;
         target.EdgeColorCycling = data.EdgeColorCycling;
         target.EdgeColorAngle = data.EdgeColorAngle;
-        target.ShowGridLines = data.ShowGridLines;
+        // Floor mode: prefer the new field, fall back to the legacy
+        // ShowGridLines bool for sessions saved before this feature landed.
+        // Sessions that have neither (extremely old or hand-edited) keep the
+        // current renderer default rather than being forced to Off.
+        if (data.FloorMode.HasValue)
+        {
+            target.FloorMode = (FloorMode)Math.Clamp(data.FloorMode.Value, 0, 2);
+        }
+        else
+        {
+            target.FloorMode = data.ShowGridLines ? FloorMode.Grid : FloorMode.Off;
+        }
         target.ShowGenerationLabels = data.ShowGenerationLabels;
         target.ShowWireframe = data.ShowWireframe;
         target.CellColor = new Vector3(data.CellColorR, data.CellColorG, data.CellColorB);
@@ -208,6 +250,18 @@ public static class SessionManager
         target.BloomIntensity = data.BloomIntensity;
         // Beveled cubes
         target.UseBeveledCubes = data.UseBeveledCubes;
+        // Reflective floor / water — each field falls back to the current
+        // setting on the target if the session predates that field.
+        if (data.WaveStrength.HasValue) target.WaveStrength = data.WaveStrength.Value;
+        if (data.WaveSpeed.HasValue) target.WaveSpeed = data.WaveSpeed.Value;
+        if (data.WaterTintR.HasValue && data.WaterTintG.HasValue && data.WaterTintB.HasValue)
+        {
+            target.WaterTint = new Vector3(
+                data.WaterTintR.Value, data.WaterTintG.Value, data.WaterTintB.Value);
+        }
+        if (data.Reflectivity.HasValue) target.Reflectivity = data.Reflectivity.Value;
+        if (data.ReflectionResolutionScale.HasValue)
+            target.ReflectionResolutionScale = Math.Clamp(data.ReflectionResolutionScale.Value, 0.25f, 1f);
         // Gradient stops — only adopt when the saved data is structurally valid.
         // Older sessions (or hand-edited JSON) that omit the field, supply too few
         // stops, or have a non-multiple-of-3 length explicitly reset to the Classic
