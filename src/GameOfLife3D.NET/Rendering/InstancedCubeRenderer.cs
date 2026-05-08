@@ -129,6 +129,7 @@ public sealed class InstancedCubeRenderer : IDisposable
         shader.SetUniform("uSolidColor", settings.CellColor);
         shader.SetUniform("uTime", time);
         shader.SetUniform("uLightDir", Vector3.Normalize(new Vector3(1f, 1f, 0.5f)));
+        UploadGradientUniforms(shader, settings);
 
         // Fog
         shader.SetUniform("uFogEnabled", settings.FogEnabled);
@@ -167,6 +168,7 @@ public sealed class InstancedCubeRenderer : IDisposable
         shader.SetUniform("uEdgeColor", settings.EdgeColor);
         shader.SetUniform("uTime", time);
         shader.SetUniform("uHueAngle", settings.EdgeColorAngle);
+        UploadGradientUniforms(shader, settings);
 
         // Fog
         shader.SetUniform("uFogEnabled", settings.FogEnabled);
@@ -197,6 +199,25 @@ public sealed class InstancedCubeRenderer : IDisposable
 
         _gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill);
         _gl.Disable(EnableCap.PolygonOffsetLine);
+    }
+
+    /// <summary>
+    /// Uploads the user-editable gradient palette to both the face and wireframe shaders.
+    /// Always sends RenderSettings.MaxGradientStops slots; padding the unused tail with
+    /// the last valid color guarantees that any out-of-range read (e.g. a stale count
+    /// uniform after a hot-reload) degenerates to a no-op rather than rendering black.
+    /// </summary>
+    private static void UploadGradientUniforms(ShaderProgram shader, RenderSettings settings)
+    {
+        var stops = settings.GradientStops;
+        int count = Math.Clamp(stops.Count, RenderSettings.MinGradientStops, RenderSettings.MaxGradientStops);
+        Vector3 last = stops[count - 1];
+        for (int i = 0; i < RenderSettings.MaxGradientStops; i++)
+        {
+            Vector3 color = i < count ? stops[i] : last;
+            shader.SetUniform($"uGradientColors[{i}]", color);
+        }
+        shader.SetUniform("uGradientStopCount", count);
     }
 
     public void Dispose()
