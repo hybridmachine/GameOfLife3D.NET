@@ -1073,8 +1073,10 @@ public sealed class ImGuiUI
                 settings.Reflectivity = _reflectivity;
             UIHelpers.Tooltip("Schlick F0: how much the surface reflects when looked at straight-on. Glancing angles always reflect strongly.");
 
-            ImGui.SetNextItemWidth(fullWidth);
-            if (ImGui.ColorEdit3("##watertint", ref _waterTint))
+            // Just the color swatch — clicking it pops the full picker.
+            // The inline R/G/B numeric inputs ColorEdit3 shows by default
+            // crowd the panel and the picker popup falls off-screen.
+            if (ImGui.ColorEdit3("Water Tint", ref _waterTint, ImGuiColorEditFlags.NoInputs))
                 settings.WaterTint = _waterTint;
             UIHelpers.Tooltip("Base water color blended underneath the reflection.");
 
