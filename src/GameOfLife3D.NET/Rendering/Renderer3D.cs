@@ -176,7 +176,7 @@ public sealed class Renderer3D : IDisposable
         // double-render too costly, or when the floor renderer hasn't been
         // initialized yet (pre-FBO setup).
         bool wantsReflection = _settings.FloorMode == FloorMode.Reflective
-                            && _floorRenderer != null
+                            && _floorRenderer is { IsInitialized: true }
                             && _floorShader != null
                             && _currentInstanceCount <= ReflectionMaxInstances;
 
@@ -206,6 +206,10 @@ public sealed class Renderer3D : IDisposable
         else
         {
             _gl.Viewport(0, 0, (uint)screenWidth, (uint)screenHeight);
+            // Reset the clear color before clearing — the reflection pass
+            // above may have left it as the fog/water clear, which would
+            // otherwise leak into the main render when post-process is off.
+            _gl.ClearColor(0.05f, 0.05f, 0.08f, 1.0f);
             _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         }
 
@@ -245,7 +249,7 @@ public sealed class Renderer3D : IDisposable
                 _gl.Disable(EnableCap.Blend);
                 break;
 
-            case FloorMode.Reflective when _floorRenderer != null && _floorShader != null:
+            case FloorMode.Reflective when _floorRenderer is { IsInitialized: true } && _floorShader != null:
                 Vector3 cameraPos = ExtractCameraPosition(view);
                 _gl.Enable(EnableCap.Blend);
                 _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);

@@ -40,6 +40,14 @@ public sealed class ReflectiveFloorRenderer : IDisposable
 
     public uint ReflectionTexture => _reflectColorTex;
 
+    /// <summary>
+    /// True once both the floor quad geometry and the reflection FBO have been
+    /// allocated. Callers that wire the reflection pass need to skip it until
+    /// this is true so they don't bind FBO 0 with a 0×0 viewport when
+    /// <see cref="Renderer3D.Render"/> runs before <see cref="Initialize"/>.
+    /// </summary>
+    public bool IsInitialized => _reflectFbo != 0 && _quadVao != 0;
+
     public ReflectiveFloorRenderer(GL gl)
     {
         _gl = gl;

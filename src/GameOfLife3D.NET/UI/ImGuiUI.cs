@@ -45,7 +45,7 @@ public sealed class ImGuiUI
     // edited the stops away from any built-in preset. The actual stop list
     // lives on RenderSettings.GradientStops — we don't mirror it here.
     private string? _gradientPreset;
-    private int _floorModeIdx; // 0=Off, 1=Grid, 2=Reflective — index into FloorModeLabels
+    private int _floorModeIdx; // Mirrors (int)RenderSettings.FloorMode: 0=Off, 1=Grid, 2=Reflective
     private float _waveStrength;
     private float _waveSpeed;
     private Vector3 _waterTint;

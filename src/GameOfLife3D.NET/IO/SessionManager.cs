@@ -33,10 +33,11 @@ public sealed class RenderSessionData
     public bool EdgeColorCycling { get; set; }
     public float EdgeColorAngle { get; set; }
 
-    // Legacy: pre-floor-mode sessions only had a grid-lines toggle. Read on
-    // load as a fallback when no FloorMode is present (true -> Grid, false ->
-    // Off); not written by current saves.
-    public bool ShowGridLines { get; set; }
+    // Legacy: pre-floor-mode sessions only had a grid-lines toggle. Nullable
+    // so we can distinguish "field absent" (modern save) from an explicit
+    // false; the JSON serializer's WhenWritingNull rule then keeps modern
+    // saves from emitting it.
+    public bool? ShowGridLines { get; set; }
 
     // Floor selection (Off / Grid / Reflective). Nullable so loaders can tell
     // "field absent" (legacy) from "field present with value 0 = Off".
@@ -218,15 +219,16 @@ public static class SessionManager
         target.EdgeColorAngle = data.EdgeColorAngle;
         // Floor mode: prefer the new field, fall back to the legacy
         // ShowGridLines bool for sessions saved before this feature landed.
-        // Sessions that have neither (extremely old or hand-edited) keep the
-        // current renderer default rather than being forced to Off.
+        // Sessions that have neither (extremely old or hand-edited) leave
+        // target.FloorMode untouched so it keeps the current renderer default
+        // rather than being forced to Off.
         if (data.FloorMode.HasValue)
         {
             target.FloorMode = (FloorMode)Math.Clamp(data.FloorMode.Value, 0, 2);
         }
-        else
+        else if (data.ShowGridLines.HasValue)
         {
-            target.FloorMode = data.ShowGridLines ? FloorMode.Grid : FloorMode.Off;
+            target.FloorMode = data.ShowGridLines.Value ? FloorMode.Grid : FloorMode.Off;
         }
         target.ShowGenerationLabels = data.ShowGenerationLabels;
         target.ShowWireframe = data.ShowWireframe;
