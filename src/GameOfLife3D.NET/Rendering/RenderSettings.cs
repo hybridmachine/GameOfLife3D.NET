@@ -1,9 +1,28 @@
+using System.Collections.Immutable;
 using System.Numerics;
 
 namespace GameOfLife3D.NET.Rendering;
 
 public sealed class RenderSettings
 {
+    public const int MinGradientStops = 2;
+    public const int MaxGradientStops = 8;
+
+    /// <summary>
+    /// Default face-cycling palette — matches the original hard-coded gradient
+    /// (blue → green → yellow → black → purple → wrap). Kept identical so any
+    /// pre-feature session loads pixel-for-pixel the same. Exposed as an
+    /// <see cref="ImmutableArray{T}"/> so external callers (and built-in presets
+    /// that reference it) can't mutate the canonical default in place.
+    /// </summary>
+    public static readonly ImmutableArray<Vector3> DefaultGradientStops =
+        ImmutableArray.Create(
+            new Vector3(0f, 0f, 1f),       // blue
+            new Vector3(0f, 1f, 0f),       // green
+            new Vector3(1f, 1f, 0f),       // yellow
+            new Vector3(0f, 0f, 0f),       // black
+            new Vector3(0.5f, 0f, 0.5f));  // purple
+
     public float CellPadding { get; set; } = 0.2f;
     public Vector3 CellColor { get; set; } = new(0f, 1f, 0.533f); // #00ff88
     public Vector3 EdgeColor { get; set; } = new(1f, 1f, 1f);
@@ -13,6 +32,26 @@ public sealed class RenderSettings
     public bool EdgeColorCycling { get; set; } = true;
     public float EdgeColorAngle { get; set; } = 180f;
     public bool ShowWireframe { get; set; } = false;
+
+    /// <summary>
+    /// User-editable face-color gradient stops. Cyclic (last wraps to first).
+    /// Length is constrained to [MinGradientStops, MaxGradientStops] at the UI
+    /// and persistence boundaries.
+    /// </summary>
+    public List<Vector3> GradientStops { get; set; } = new(DefaultGradientStops);
+
+    /// <summary>
+    /// Reserved for a future linear/no-wrap toggle. Currently always treated as
+    /// true (cyclic) by the shader; do not flip until the shader branch lands.
+    /// </summary>
+    // TODO: wire this up alongside a uGradientWrap uniform once the shader gains
+    // a clamp/wrap branch in computeGradientColor.
+    public bool GradientWrap { get; set; } = true;
+
+    public void ResetGradient()
+    {
+        GradientStops = new List<Vector3>(DefaultGradientStops);
+    }
 
     // Fog
     public bool FogEnabled { get; set; }

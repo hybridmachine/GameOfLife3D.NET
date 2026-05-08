@@ -23,4 +23,5 @@ static class Icons
     public const string Pencil      = "\uF303";  // fa-pencil
     public const string FloppyDisk  = "\uF0C7";  // fa-floppy-disk
     public const string Camera      = "\uF030";  // fa-camera
+    public const string Trash       = "\uF1F8";  // fa-trash
 }

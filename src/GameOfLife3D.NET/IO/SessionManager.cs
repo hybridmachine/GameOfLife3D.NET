@@ -70,6 +70,10 @@ public sealed class RenderSessionData
 
     // Beveled cubes
     public bool UseBeveledCubes { get; set; }
+
+    // Face-cycling gradient stops, flattened RGB triples (length = 3 * stopCount).
+    // Nullable for backward compatibility with sessions saved before the editor landed.
+    public float[]? GradientStops { get; set; }
 }
 
 public static class SessionManager
@@ -159,7 +163,21 @@ public static class SessionManager
         BloomIntensity = s.BloomIntensity,
         // Beveled cubes
         UseBeveledCubes = s.UseBeveledCubes,
+        // Gradient stops (flatten R, G, B triples in order)
+        GradientStops = FlattenStops(s.GradientStops),
     };
+
+    private static float[] FlattenStops(IReadOnlyList<Vector3> stops)
+    {
+        var arr = new float[stops.Count * 3];
+        for (int i = 0; i < stops.Count; i++)
+        {
+            arr[i * 3 + 0] = stops[i].X;
+            arr[i * 3 + 1] = stops[i].Y;
+            arr[i * 3 + 2] = stops[i].Z;
+        }
+        return arr;
+    }
 
     public static void ApplyRenderSettings(RenderSessionData data, RenderSettings target)
     {
@@ -190,5 +208,29 @@ public static class SessionManager
         target.BloomIntensity = data.BloomIntensity;
         // Beveled cubes
         target.UseBeveledCubes = data.UseBeveledCubes;
+        // Gradient stops — only adopt when the saved data is structurally valid.
+        // Older sessions (or hand-edited JSON) that omit the field, supply too few
+        // stops, or have a non-multiple-of-3 length explicitly reset to the Classic
+        // default. Without this reset, loading an old session would silently keep
+        // whatever palette the user had edited in the current run.
+        if (data.GradientStops is { Length: > 0 } flat
+            && flat.Length % 3 == 0
+            && flat.Length / 3 >= RenderSettings.MinGradientStops)
+        {
+            int count = Math.Min(flat.Length / 3, RenderSettings.MaxGradientStops);
+            var rebuilt = new List<Vector3>(count);
+            for (int i = 0; i < count; i++)
+            {
+                rebuilt.Add(new Vector3(
+                    flat[i * 3 + 0],
+                    flat[i * 3 + 1],
+                    flat[i * 3 + 2]));
+            }
+            target.GradientStops = rebuilt;
+        }
+        else
+        {
+            target.ResetGradient();
+        }
     }
 }

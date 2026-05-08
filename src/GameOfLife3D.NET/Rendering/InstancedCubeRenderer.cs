@@ -129,6 +129,7 @@ public sealed class InstancedCubeRenderer : IDisposable
         shader.SetUniform("uSolidColor", settings.CellColor);
         shader.SetUniform("uTime", time);
         shader.SetUniform("uLightDir", Vector3.Normalize(new Vector3(1f, 1f, 0.5f)));
+        UploadGradientUniforms(shader, settings);
 
         // Fog
         shader.SetUniform("uFogEnabled", settings.FogEnabled);
@@ -167,6 +168,7 @@ public sealed class InstancedCubeRenderer : IDisposable
         shader.SetUniform("uEdgeColor", settings.EdgeColor);
         shader.SetUniform("uTime", time);
         shader.SetUniform("uHueAngle", settings.EdgeColorAngle);
+        UploadGradientUniforms(shader, settings);
 
         // Fog
         shader.SetUniform("uFogEnabled", settings.FogEnabled);
@@ -197,6 +199,47 @@ public sealed class InstancedCubeRenderer : IDisposable
 
         _gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill);
         _gl.Disable(EnableCap.PolygonOffsetLine);
+    }
+
+    // Pre-built indexed uniform names so the per-frame upload path doesn't
+    // allocate via string interpolation. Length matches RenderSettings.MaxGradientStops.
+    private static readonly string[] GradientUniformNames = BuildGradientUniformNames();
+
+    private static string[] BuildGradientUniformNames()
+    {
+        var names = new string[RenderSettings.MaxGradientStops];
+        for (int i = 0; i < names.Length; i++)
+            names[i] = $"uGradientColors[{i}]";
+        return names;
+    }
+
+    /// <summary>
+    /// Uploads the user-editable gradient palette to the supplied shader. Called
+    /// once per draw call from both the face and wireframe render paths so each
+    /// shader program ends up with a complete copy. Always sends
+    /// <see cref="RenderSettings.MaxGradientStops"/> slots; padding the unused
+    /// tail with the last valid color guarantees that any out-of-range read
+    /// (e.g. a stale count uniform after a hot-reload) degenerates to a no-op
+    /// rather than rendering black.
+    /// </summary>
+    private static void UploadGradientUniforms(ShaderProgram shader, RenderSettings settings)
+    {
+        // Defense-in-depth: the UI and persistence boundaries enforce >= MinGradientStops,
+        // but a programmatic mutation or future bug could leave the list null/short. Falling
+        // back to DefaultGradientStops keeps the renderer well-defined without mutating the
+        // caller's settings — the UI will repair it on its next pass.
+        IReadOnlyList<Vector3> stops = settings.GradientStops;
+        if (stops is null || stops.Count < RenderSettings.MinGradientStops)
+            stops = RenderSettings.DefaultGradientStops;
+
+        int count = Math.Min(stops.Count, RenderSettings.MaxGradientStops);
+        Vector3 last = stops[count - 1];
+        for (int i = 0; i < RenderSettings.MaxGradientStops; i++)
+        {
+            Vector3 color = i < count ? stops[i] : last;
+            shader.SetUniform(GradientUniformNames[i], color);
+        }
+        shader.SetUniform("uGradientStopCount", count);
     }
 
     public void Dispose()

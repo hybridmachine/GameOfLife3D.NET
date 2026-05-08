@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using GameOfLife3D.NET.Camera;
 using GameOfLife3D.NET.Editing;
 using GameOfLife3D.NET.Engine;
@@ -40,6 +41,10 @@ public sealed class ImGuiUI
     private bool _faceColorCycling;
     private bool _edgeColorCycling;
     private float _edgeColorAngle;
+    // Active preset name (e.g. "Classic", "Sunset"); null when the user has
+    // edited the stops away from any built-in preset. The actual stop list
+    // lives on RenderSettings.GradientStops — we don't mirror it here.
+    private string? _gradientPreset;
     private bool _showGridLines;
     private bool _showGenerationLabels;
     private bool _showWireframe;
@@ -178,6 +183,7 @@ public sealed class ImGuiUI
         _showGridLines = settings.ShowGridLines;
         _showGenerationLabels = settings.ShowGenerationLabels;
         _showWireframe = settings.ShowWireframe;
+        _gradientPreset = GradientPresets.Match(settings.GradientStops);
 
         _timeline.RangeChanged += OnRangeChanged;
         _timeline.PlayToggled += playing => _isPlaying = playing;
@@ -899,7 +905,11 @@ public sealed class ImGuiUI
                 settings.FaceColorCycling = _faceColorCycling;
             UIHelpers.Tooltip("Animate face colors based on generation using a gradient");
 
-            if (!_faceColorCycling)
+            if (_faceColorCycling)
+            {
+                RenderGradientEditor(settings, fullWidth);
+            }
+            else
             {
                 ImGui.SetNextItemWidth(fullWidth);
                 if (ImGui.ColorEdit3("##cellcolor", ref _cellColor))
@@ -917,6 +927,7 @@ public sealed class ImGuiUI
                     ImGui.SetNextItemWidth(fullWidth);
                     if (ImGui.SliderFloat("##hue", ref _edgeColorAngle, 0f, 360f, "Hue Offset: %.0f\u00B0"))
                         settings.EdgeColorAngle = _edgeColorAngle;
+                    UIHelpers.Tooltip("Rotates the face gradient hue (in HSL) to derive wireframe colors. Dark stops are auto-brightened to keep wires visible.");
                 }
                 else
                 {
@@ -1015,6 +1026,135 @@ public sealed class ImGuiUI
                     settings.BloomIntensity = _bloomIntensity;
             }
         }
+    }
+
+    /// <summary>
+    /// Editor for the user-selectable face-cycling gradient. Source of truth is
+    /// <see cref="RenderSettings.GradientStops"/>; we mutate it in place via
+    /// <see cref="CollectionsMarshal.AsSpan"/> so the renderer picks up edits the
+    /// next frame without a copy-back step.
+    /// </summary>
+    private void RenderGradientEditor(RenderSettings settings, float fullWidth)
+    {
+        ImGui.Spacing();
+
+        // ── Preset combo ──
+        string presetLabel = _gradientPreset ?? GradientPresets.CustomLabel;
+        ImGui.SetNextItemWidth(fullWidth);
+        if (ImGui.BeginCombo("##gradpreset", presetLabel))
+        {
+            foreach (var (name, preset) in GradientPresets.Presets)
+            {
+                bool isSelected = _gradientPreset == name;
+                if (ImGui.Selectable(name, isSelected))
+                {
+                    settings.GradientStops = new List<Vector3>(preset);
+                    _gradientPreset = name;
+                }
+                if (isSelected) ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+        UIHelpers.Tooltip("Choose a built-in palette. Editing any stop switches to Custom.");
+
+        // ── Live preview strip ──
+        DrawGradientPreview(settings.GradientStops, fullWidth);
+
+        // ── Per-stop pickers + remove ──
+        var span = CollectionsMarshal.AsSpan(settings.GradientStops);
+        int removeIdx = -1;
+        bool canRemove = settings.GradientStops.Count > RenderSettings.MinGradientStops;
+
+        for (int i = 0; i < settings.GradientStops.Count; i++)
+        {
+            ImGui.PushID(i);
+
+            // Color square + dropdown picker. NoLabel/NoInputs keep the row compact.
+            ImGui.SetNextItemWidth(fullWidth - 30f);
+            if (ImGui.ColorEdit3($"##stop{i}", ref span[i],
+                    ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoLabel))
+            {
+                _gradientPreset = GradientPresets.Match(settings.GradientStops);
+            }
+
+            ImGui.SameLine();
+            if (!canRemove) ImGui.BeginDisabled();
+            if (ImGui.Button(Icons.Trash, new Vector2(24f, 0)))
+                removeIdx = i;
+            if (!canRemove) ImGui.EndDisabled();
+            UIHelpers.Tooltip(canRemove
+                ? "Remove this stop"
+                : $"Minimum {RenderSettings.MinGradientStops} stops required");
+
+            ImGui.PopID();
+        }
+
+        if (removeIdx >= 0)
+        {
+            settings.GradientStops.RemoveAt(removeIdx);
+            _gradientPreset = GradientPresets.Match(settings.GradientStops);
+        }
+
+        // ── Add Stop / Reset row ──
+        bool canAdd = settings.GradientStops.Count < RenderSettings.MaxGradientStops;
+        float spacing = ImGui.GetStyle().ItemSpacing.X;
+        float halfWidth = (fullWidth - spacing) * 0.5f;
+
+        if (!canAdd) ImGui.BeginDisabled();
+        if (ImGui.Button("+ Add Stop", new Vector2(halfWidth, 0)))
+        {
+            // Duplicate the last color so the new stop blends seamlessly until edited.
+            var last = settings.GradientStops[^1];
+            settings.GradientStops.Add(last);
+            _gradientPreset = GradientPresets.Match(settings.GradientStops);
+        }
+        if (!canAdd) ImGui.EndDisabled();
+        UIHelpers.Tooltip(canAdd
+            ? "Append a new color stop (max 8)"
+            : $"Maximum {RenderSettings.MaxGradientStops} stops reached");
+
+        ImGui.SameLine();
+        if (ImGui.Button("Reset", new Vector2(halfWidth, 0)))
+        {
+            settings.ResetGradient();
+            _gradientPreset = GradientPresets.Match(settings.GradientStops);
+        }
+        UIHelpers.Tooltip("Restore the default Classic palette");
+    }
+
+    /// <summary>
+    /// Draws a 1D preview of the cyclic gradient as a strip of multi-color rects.
+    /// One extra segment from the last stop back to the first is appended so the
+    /// wrap point is visible.
+    /// </summary>
+    private static void DrawGradientPreview(IReadOnlyList<Vector3> stops, float width)
+    {
+        if (stops.Count < 2) return;
+
+        float height = MathF.Max(10f, ImGui.GetTextLineHeight() * 0.9f);
+        var drawList = ImGui.GetWindowDrawList();
+        var origin = ImGui.GetCursorScreenPos();
+
+        int segments = stops.Count; // includes wrap segment
+        float segWidth = width / segments;
+
+        for (int i = 0; i < segments; i++)
+        {
+            Vector3 a = stops[i];
+            Vector3 b = stops[(i + 1) % stops.Count];
+            uint colA = ImGui.ColorConvertFloat4ToU32(new Vector4(a.X, a.Y, a.Z, 1f));
+            uint colB = ImGui.ColorConvertFloat4ToU32(new Vector4(b.X, b.Y, b.Z, 1f));
+            var p0 = new Vector2(origin.X + i * segWidth, origin.Y);
+            var p1 = new Vector2(origin.X + (i + 1) * segWidth, origin.Y + height);
+            drawList.AddRectFilledMultiColor(p0, p1, colA, colB, colB, colA);
+        }
+
+        // Subtle border so the strip reads as one element.
+        drawList.AddRect(origin,
+            new Vector2(origin.X + width, origin.Y + height),
+            Theme.BorderU32, 2f);
+
+        ImGui.Dummy(new Vector2(width, height + 4f));
     }
 
     private void RenderFontSizeControls(float fullWidth)
@@ -1353,6 +1493,7 @@ public sealed class ImGuiUI
         _faceColorCycling = s.FaceColorCycling;
         _edgeColorCycling = s.EdgeColorCycling;
         _edgeColorAngle = s.EdgeColorAngle;
+        _gradientPreset = GradientPresets.Match(s.GradientStops);
         _showGridLines = s.ShowGridLines;
         _showGenerationLabels = s.ShowGenerationLabels;
         _showWireframe = s.ShowWireframe;
