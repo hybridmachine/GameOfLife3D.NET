@@ -26,7 +26,7 @@ public sealed class RenderSettings
     public float CellPadding { get; set; } = 0.2f;
     public Vector3 CellColor { get; set; } = new(0f, 1f, 0.533f); // #00ff88
     public Vector3 EdgeColor { get; set; } = new(1f, 1f, 1f);
-    public bool ShowGridLines { get; set; } = true;
+    public FloorMode FloorMode { get; set; } = FloorMode.Reflective;
     public bool ShowGenerationLabels { get; set; } = false;
     public bool FaceColorCycling { get; set; } = true;
     public bool EdgeColorCycling { get; set; } = true;
@@ -79,6 +79,15 @@ public sealed class RenderSettings
     // Generation fade-in (cinematic mode)
     public float FadeGeneration { get; set; } = -1f;
     public float FadeOpacity { get; set; } = 1f;
+
+    // Reflective floor / water — only used when FloorMode == Reflective.
+    // WaveStrength=0 gives a perfect mirror; defaults are tuned for a calm,
+    // slightly rippled surface that doesn't fight the cubes for attention.
+    public float WaveStrength { get; set; } = 0.15f;
+    public float WaveSpeed { get; set; } = 0.4f;
+    public Vector3 WaterTint { get; set; } = new(0.04f, 0.08f, 0.12f);
+    public float Reflectivity { get; set; } = 0.55f;
+    public float ReflectionResolutionScale { get; set; } = 0.5f;
 }
 
 public enum BackgroundMode
@@ -86,4 +95,11 @@ public enum BackgroundMode
     Solid,
     Gradient,
     Starfield,
+}
+
+public enum FloorMode
+{
+    Off,
+    Grid,
+    Reflective,
 }
