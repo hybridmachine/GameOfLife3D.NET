@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Numerics;
 
 namespace GameOfLife3D.NET.Rendering;
@@ -10,16 +11,17 @@ public sealed class RenderSettings
     /// <summary>
     /// Default face-cycling palette — matches the original hard-coded gradient
     /// (blue → green → yellow → black → purple → wrap). Kept identical so any
-    /// pre-feature session loads pixel-for-pixel the same.
+    /// pre-feature session loads pixel-for-pixel the same. Exposed as an
+    /// <see cref="ImmutableArray{T}"/> so external callers (and built-in presets
+    /// that reference it) can't mutate the canonical default in place.
     /// </summary>
-    public static readonly Vector3[] DefaultGradientStops =
-    {
-        new(0f, 0f, 1f),       // blue
-        new(0f, 1f, 0f),       // green
-        new(1f, 1f, 0f),       // yellow
-        new(0f, 0f, 0f),       // black
-        new(0.5f, 0f, 0.5f),   // purple
-    };
+    public static readonly ImmutableArray<Vector3> DefaultGradientStops =
+        ImmutableArray.Create(
+            new Vector3(0f, 0f, 1f),       // blue
+            new Vector3(0f, 1f, 0f),       // green
+            new Vector3(1f, 1f, 0f),       // yellow
+            new Vector3(0f, 0f, 0f),       // black
+            new Vector3(0.5f, 0f, 0.5f));  // purple
 
     public float CellPadding { get; set; } = 0.2f;
     public Vector3 CellColor { get; set; } = new(0f, 1f, 0.533f); // #00ff88

@@ -209,8 +209,15 @@ public sealed class InstancedCubeRenderer : IDisposable
     /// </summary>
     private static void UploadGradientUniforms(ShaderProgram shader, RenderSettings settings)
     {
-        var stops = settings.GradientStops;
-        int count = Math.Clamp(stops.Count, RenderSettings.MinGradientStops, RenderSettings.MaxGradientStops);
+        // Defense-in-depth: the UI and persistence boundaries enforce >= MinGradientStops,
+        // but a programmatic mutation or future bug could leave the list null/short. Falling
+        // back to DefaultGradientStops keeps the renderer well-defined without mutating the
+        // caller's settings — the UI will repair it on its next pass.
+        IReadOnlyList<Vector3> stops = settings.GradientStops;
+        if (stops is null || stops.Count < RenderSettings.MinGradientStops)
+            stops = RenderSettings.DefaultGradientStops;
+
+        int count = Math.Min(stops.Count, RenderSettings.MaxGradientStops);
         Vector3 last = stops[count - 1];
         for (int i = 0; i < RenderSettings.MaxGradientStops; i++)
         {

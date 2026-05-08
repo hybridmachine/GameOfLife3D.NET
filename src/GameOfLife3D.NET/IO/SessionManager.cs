@@ -210,7 +210,9 @@ public static class SessionManager
         target.UseBeveledCubes = data.UseBeveledCubes;
         // Gradient stops — only adopt when the saved data is structurally valid.
         // Older sessions (or hand-edited JSON) that omit the field, supply too few
-        // stops, or have a non-multiple-of-3 length fall through to defaults.
+        // stops, or have a non-multiple-of-3 length explicitly reset to the Classic
+        // default. Without this reset, loading an old session would silently keep
+        // whatever palette the user had edited in the current run.
         if (data.GradientStops is { Length: > 0 } flat
             && flat.Length % 3 == 0
             && flat.Length / 3 >= RenderSettings.MinGradientStops)
@@ -225,6 +227,10 @@ public static class SessionManager
                     flat[i * 3 + 2]));
             }
             target.GradientStops = rebuilt;
+        }
+        else
+        {
+            target.ResetGradient();
         }
     }
 }
