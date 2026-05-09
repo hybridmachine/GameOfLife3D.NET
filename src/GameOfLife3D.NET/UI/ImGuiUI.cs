@@ -725,7 +725,8 @@ public sealed class ImGuiUI
 
             float currentX = 0;
             float spacing = ImGui.GetStyle().ItemSpacing.X;
-            foreach (var recentId in _patternLibState.RecentIds)
+            var recentIdsSnapshot = _patternLibState.RecentIds.ToArray();
+            foreach (var recentId in recentIdsSnapshot)
             {
                 var metadata = _patternLibrary.Get(recentId);
                 if (metadata == null) continue;
