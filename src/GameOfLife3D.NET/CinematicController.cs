@@ -138,6 +138,8 @@ public sealed class CinematicController
 
     private bool TryStartPatternCycle(string patternId, double currentTime)
     {
+        string? patternName = _patternLibrary.Get(patternId)?.Name
+            ?? _patternLoader.GetBuiltInPatternInfo(patternId)?.Name;
         var pattern = _patternLibrary.GetPattern(patternId)
             ?? _patternLoader.GetBuiltInPattern(patternId);
         if (pattern == null)
@@ -146,7 +148,11 @@ public sealed class CinematicController
         _engine.InitializeFromPattern(pattern);
         _engine.ComputeGenerations(PrecomputeCount);
 
-        return TryStartPreparedCycle(currentTime);
+        if (!TryStartPreparedCycle(currentTime))
+            return false;
+
+        _ui.StartCinematicPatternLabel(patternName ?? patternId, currentTime);
+        return true;
     }
 
     private bool TryStartRandomCycle(double currentTime)
@@ -158,7 +164,10 @@ public sealed class CinematicController
             _engine.ComputeGenerations(PrecomputeCount);
 
             if (TryStartPreparedCycle(currentTime))
+            {
+                _ui.StartCinematicPatternLabel("Random Seed", currentTime);
                 return true;
+            }
         }
 
         return false;

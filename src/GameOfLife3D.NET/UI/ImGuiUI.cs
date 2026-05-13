@@ -90,6 +90,8 @@ public sealed class ImGuiUI
     // Cinematic mode
     private double _lastTickTime;
     private double _cinematicHintStartTime;
+    private double _cinematicPatternLabelStartTime;
+    private string? _cinematicPatternLabel;
 
     // Animation
     private bool _isPlaying;
@@ -279,6 +281,12 @@ public sealed class ImGuiUI
         _cinematicHintStartTime = currentTime;
     }
 
+    public void StartCinematicPatternLabel(string patternName, double currentTime)
+    {
+        _cinematicPatternLabel = patternName;
+        _cinematicPatternLabelStartTime = currentTime;
+    }
+
     private void OnRangeChanged(int start, int end)
     {
         if (!IsCinematicModeActive && _camera.IsFlythroughActive)
@@ -368,6 +376,7 @@ public sealed class ImGuiUI
     {
         var drawList = ImGui.GetForegroundDrawList();
         double elapsed = _lastTickTime - _cinematicHintStartTime;
+        RenderCinematicPatternLabel(drawList, windowWidth);
 
         // Main "Cinematic Mode" text fades out over 3 seconds (visible for first 1s, then fades)
         if (elapsed < 4.0)
@@ -401,6 +410,26 @@ public sealed class ImGuiUI
             uint hintColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.15f));
             drawList.AddText(hintPos, hintColor, hint);
         }
+    }
+
+    private void RenderCinematicPatternLabel(ImDrawListPtr drawList, int windowWidth)
+    {
+        if (string.IsNullOrWhiteSpace(_cinematicPatternLabel))
+            return;
+
+        double elapsed = _lastTickTime - _cinematicPatternLabelStartTime;
+        if (elapsed >= 4.0)
+            return;
+
+        float alpha = Math.Max(0f, 1.0f - (float)(elapsed / 4.0));
+        string label = $"Pattern: {_cinematicPatternLabel}";
+        var labelSize = ImGui.CalcTextSize(label);
+        var labelPos = new Vector2((windowWidth - labelSize.X) * 0.5f, 72f);
+        uint shadow = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, alpha * 0.7f));
+        uint color = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, alpha));
+
+        drawList.AddText(new Vector2(labelPos.X + 1f, labelPos.Y + 1f), shadow, label);
+        drawList.AddText(labelPos, color, label);
     }
 
     private void RenderControlPanel(int windowWidth, int windowHeight)
