@@ -179,7 +179,7 @@ public sealed class App : IDisposable
         SyncFontSizeState();
 
         // Initialize cinematic controller
-        _cinematic = new CinematicController(_engine, _camera, _ui, _renderer);
+        _cinematic = new CinematicController(_engine, _camera, _ui, _renderer, _patternLoader, _patternLibrary);
 
         // Initialize video recording
         _recording = new RecordingController();
