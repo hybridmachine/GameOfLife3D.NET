@@ -252,6 +252,11 @@ public sealed class ImGuiUI
         _timeline.SetRange(0, maxGen);
     }
 
+    public void SyncGradientPresetLabel()
+    {
+        _gradientPreset = GradientPresets.Match(_renderer.Settings.GradientStops);
+    }
+
     public void SetDisplayEnd(int end)
     {
         int maxGen = Math.Max(0, _engine.GenerationCount - 1);

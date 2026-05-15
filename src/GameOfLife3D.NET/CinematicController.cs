@@ -41,6 +41,8 @@ public sealed class CinematicController
     private double _lastRevealTime;
     private int _revealedEnd;
     private int _playlistIndex;
+    private List<Vector3>? _savedGradientStops;
+    private int _lastPaletteIndex = -1;
 
     public bool IsActive => _isActive;
 
@@ -66,6 +68,8 @@ public sealed class CinematicController
 
         _isActive = true;
         _playlistIndex = 0;
+        _savedGradientStops = new List<Vector3>(_renderer.Settings.GradientStops);
+        _lastPaletteIndex = ResolveCurrentPaletteIndex(_renderer.Settings.GradientStops);
         _ui.Pause();
         StartNewCycle(currentTime);
     }
@@ -80,6 +84,14 @@ public sealed class CinematicController
         // Clear fade effect
         _renderer.Settings.FadeGeneration = -1f;
         _renderer.Settings.FadeOpacity = 1f;
+
+        if (_savedGradientStops is not null)
+        {
+            _renderer.Settings.GradientStops = new List<Vector3>(_savedGradientStops);
+            _ui.SyncGradientPresetLabel();
+            _savedGradientStops = null;
+            _lastPaletteIndex = -1;
+        }
 
         _ui.SyncDisplayRange();
     }
@@ -115,6 +127,8 @@ public sealed class CinematicController
 
     private void StartNewCycle(double currentTime)
     {
+        ApplyNextPalette();
+
         int attemptsRemaining = CuratedPatternIds.Length + 1;
         while (attemptsRemaining-- > 0)
         {
@@ -208,5 +222,35 @@ public sealed class CinematicController
                 _engine.GridSize, pos, lookAt));
 
         return true;
+    }
+
+    private void ApplyNextPalette()
+    {
+        int next = PickNextPaletteIndex();
+        _renderer.Settings.GradientStops = new List<Vector3>(GradientPresets.Presets[next].Stops);
+        _lastPaletteIndex = next;
+        _ui.SyncGradientPresetLabel();
+    }
+
+    private int PickNextPaletteIndex()
+    {
+        int n = GradientPresets.Presets.Length;
+        if (n <= 1) return 0;
+        if (_lastPaletteIndex < 0) return Random.Shared.Next(n);
+        int next = Random.Shared.Next(n - 1);
+        if (next >= _lastPaletteIndex) next++;
+        return next;
+    }
+
+    private static int ResolveCurrentPaletteIndex(IReadOnlyList<Vector3> stops)
+    {
+        string? name = GradientPresets.Match(stops);
+        if (name is null) return -1;
+        var presets = GradientPresets.Presets;
+        for (int i = 0; i < presets.Length; i++)
+        {
+            if (presets[i].Name == name) return i;
+        }
+        return -1;
     }
 }
