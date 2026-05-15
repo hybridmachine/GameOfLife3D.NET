@@ -78,7 +78,7 @@ int next = PickNextPaletteIndex();
 var stops = GradientPresets.Presets[next].Stops;
 _renderer.Settings.GradientStops = new List<Vector3>(stops);
 _lastPaletteIndex = next;
-_ui.SyncGradientPresetLabel(_renderer.Settings);
+_ui.SyncGradientPresetLabel();
 ```
 
 #### `PickNextPaletteIndex()`
@@ -107,7 +107,7 @@ Restore the snapshot if one exists:
 if (_savedGradientStops is not null)
 {
     _renderer.Settings.GradientStops = new List<Vector3>(_savedGradientStops);
-    _ui.SyncGradientPresetLabel(_renderer.Settings);
+    _ui.SyncGradientPresetLabel();
     _savedGradientStops = null;
     _lastPaletteIndex = -1;
 }
@@ -118,13 +118,13 @@ if (_savedGradientStops is not null)
 Add one public method that mirrors the existing in-file pattern (already used at lines 198, 1171, 1189, 1590):
 
 ```csharp
-public void SyncGradientPresetLabel(RenderSettings settings)
+public void SyncGradientPresetLabel()
 {
-    _gradientPreset = GradientPresets.Match(settings.GradientStops);
+    _gradientPreset = GradientPresets.Match(_renderer.Settings.GradientStops);
 }
 ```
 
-Called whenever `CinematicController` mutates `GradientStops` from outside the UI's normal edit path, so the gradient combo label reflects the currently rendered palette.
+`ImGuiUI` already holds a reference to the renderer, so the method reads `_renderer.Settings.GradientStops` directly rather than taking a parameter — keeps the call sites in `CinematicController` short. Called whenever `CinematicController` mutates `GradientStops` from outside the UI's normal edit path, so the gradient combo label reflects the currently rendered palette.
 
 ### Untouched components
 
@@ -194,7 +194,7 @@ User clicks Stop Cinematic (or escape, or pattern-load failure path)
 | File | Change |
 | --- | --- |
 | `src/GameOfLife3D.NET/CinematicController.cs` | Add `_savedGradientStops`, `_lastPaletteIndex`; add `ApplyNextPalette`, `PickNextPaletteIndex`, `ResolveCurrentPaletteIndex`; modify `Start`, `Stop`, `StartNewCycle`. |
-| `src/GameOfLife3D.NET/UI/ImGuiUI.cs` | Add public `SyncGradientPresetLabel(RenderSettings)`. |
+| `src/GameOfLife3D.NET/UI/ImGuiUI.cs` | Add public parameterless `SyncGradientPresetLabel()` that reads `_renderer.Settings.GradientStops`. |
 
 No new files. No project / dependency changes.
 
