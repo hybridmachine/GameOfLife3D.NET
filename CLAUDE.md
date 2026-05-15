@@ -17,6 +17,20 @@ dotnet publish src/GameOfLife3D.NET/ -c Release  # Publish single-file exe
 
 No test project. `RuntimeIdentifier` auto-detects `win-x64` / `linux-x64` / `osx-arm64`. `AllowUnsafeBlocks` is on for OpenGL interop. `DpiHelper` P/Invokes `user32.dll` on Windows and falls back to 1.0 elsewhere. Video recording requires an `ffmpeg` binary on `PATH` (or common macOS/Linux install paths) — it is detected at startup and is **not** bundled.
 
+## macOS Signing & Notarization
+
+End-to-end script: `./signing/Publish-And-Sign-macOS.zsh [optional-config-path]`. It publishes Release/osx-arm64 (self-contained, **not** single-file), assembles `build/macOS/Game of Life 3D.app`, generates `.icns` from `logo.png` via `sips` + `iconutil`, signs inner-to-outer (`.dylib` → `.dll` → other files → main exe → bundle, all with `--options runtime --timestamp` and the entitlements file), verifies via `codesign --verify --deep --strict` + `spctl --assess`, notarizes with `xcrun notarytool submit --wait`, staples with `xcrun stapler staple`, and rezips the stapled bundle to `build/macOS/GameOfLife3D.NET-macOS-arm64.zip`.
+
+Prerequisites (one-time setup):
+- `Developer ID Application` certificate installed in the login keychain.
+- Notarytool credentials stored under a keychain profile, e.g. `xcrun notarytool store-credentials "GameOfLife3D-notarize" --apple-id ... --team-id ... --password <app-specific-password>`.
+- `signing/macOS/macos-signing-config.json` populated from the tracked `.template.json` (fields: `TeamId`, `CertificateIdentity`, `NotarizationKeychainProfile`, `BundleIdentifier`). The populated config is **gitignored** — never commit it.
+
+Things to preserve:
+- The entitlements at `signing/macOS/GameOfLife3D.entitlements` (`allow-jit`, `allow-unsigned-executable-memory`, `disable-library-validation`, `allow-dyld-environment-variables`) are required for the .NET runtime + Silk.NET native libs to load under the hardened runtime; do not strip them.
+- The release version lives **only** in `signing/macOS/Info.plist` — both `CFBundleVersion` and `CFBundleShortVersionString` must be bumped together (e.g. `1.0.1` → `1.0.2`). The `.csproj` has no version field.
+- `LSMinimumSystemVersion` is `13.0`. Bundle ID is `com.softcentral.gameoflife3d`; keep it consistent across `Info.plist` and the signing config.
+
 ## Architecture
 
 ### Component Data Flow
