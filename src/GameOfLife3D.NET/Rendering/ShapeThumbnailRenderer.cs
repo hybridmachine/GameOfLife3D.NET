@@ -43,6 +43,7 @@ public sealed class ShapeThumbnailRenderer : IDisposable
         int[] prevViewport = new int[4];
         _gl.GetInteger(GLEnum.Viewport, prevViewport);
         _gl.GetInteger(GLEnum.FramebufferBinding, out int prevFbo);
+        bool prevDepthTest = _gl.IsEnabled(EnableCap.DepthTest);
 
         // One FBO + depth renderbuffer, reused across shapes.
         uint fbo = _gl.GenFramebuffer();
@@ -103,6 +104,7 @@ public sealed class ShapeThumbnailRenderer : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, (uint)prevFbo);
         _gl.Viewport(prevViewport[0], prevViewport[1],
             (uint)prevViewport[2], (uint)prevViewport[3]);
+        if (!prevDepthTest) _gl.Disable(EnableCap.DepthTest);
 
         _gl.DeleteFramebuffer(fbo);
         _gl.DeleteRenderbuffer(depthRbo);
