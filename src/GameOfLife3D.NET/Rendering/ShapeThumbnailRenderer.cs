@@ -95,6 +95,17 @@ public sealed class ShapeThumbnailRenderer : IDisposable
             _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer,
                 FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
 
+            // Verify completeness once — the FBO structure is identical across
+            // iterations, so a single first-iteration check covers every shape.
+            // Matches the diagnostic pattern in PostProcessPipeline and
+            // ReflectiveFloorRenderer.
+            if (_textures.Count == 0)
+            {
+                var status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+                if (status != GLEnum.FramebufferComplete)
+                    Console.Error.WriteLine($"Shape thumbnail FBO incomplete: {status}");
+            }
+
             _gl.ClearColor(0.10f, 0.12f, 0.16f, 1f); // dark slate
             _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 

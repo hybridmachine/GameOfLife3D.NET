@@ -1,6 +1,6 @@
 # PLAN — Cell Shape Variants
 
-**Status:** design approved, not yet implemented
+**Status:** implemented (#9)
 **Date:** 2026-05-15
 
 ## Goal
@@ -57,7 +57,7 @@ public CellShape Shape { get; set; } = CellShape.BeveledCube;
 // UseBeveledCubes is removed.
 ```
 
-`CellShape` enum members: `Cube, BeveledCube, Octahedron, Tetrahedron, SquarePyramid, Dodecahedron, Icosahedron, Sphere, Capsule`.
+`CellShape` enum members (integer ordering is persisted to session JSON, so do not reorder existing members): `Cube = 0, BeveledCube = 1, Tetrahedron = 2, Octahedron = 3, SquarePyramid = 4, Icosahedron = 5, Dodecahedron = 6, Sphere = 7, Capsule = 8`.
 
 ### Persistence and backward compatibility
 
