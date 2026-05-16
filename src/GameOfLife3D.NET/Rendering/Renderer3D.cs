@@ -7,7 +7,7 @@ namespace GameOfLife3D.NET.Rendering;
 public sealed class Renderer3D : IDisposable
 {
     // Above this instance count we skip the reflection pass and render the
-    // floor as flat tinted water. Matches InstancedCubeRenderer's beveled-cube
+    // floor as flat tinted water. Matches InstancedCellRenderer's beveled-cube
     // cutoff so the visual fidelity drop happens at one consistent threshold.
     private const int ReflectionMaxInstances = 500_000;
 
@@ -16,7 +16,7 @@ public sealed class Renderer3D : IDisposable
     private ShaderProgram? _wireframeShader;
     private ShaderProgram? _gridShader;
     private ShaderProgram? _floorShader;
-    private InstancedCubeRenderer? _instancedRenderer;
+    private InstancedCellRenderer? _instancedRenderer;
     private GridRenderer? _gridRenderer;
     private ReflectiveFloorRenderer? _floorRenderer;
     private PostProcessPipeline? _postProcess;
@@ -51,7 +51,7 @@ public sealed class Renderer3D : IDisposable
         _gridShader = ShaderProgram.FromEmbeddedResources(_gl, "grid.vert", "grid.frag");
         _floorShader = ShaderProgram.FromEmbeddedResources(_gl, "floor.vert", "floor.frag");
 
-        _instancedRenderer = new InstancedCubeRenderer(_gl);
+        _instancedRenderer = new InstancedCellRenderer(_gl);
         _instancedRenderer.Initialize();
 
         _gridRenderer = new GridRenderer(_gl);

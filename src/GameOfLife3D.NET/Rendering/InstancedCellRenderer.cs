@@ -11,11 +11,10 @@ public struct InstanceData
     public float GenerationT;
 }
 
-public sealed class InstancedCubeRenderer : IDisposable
+public sealed class InstancedCellRenderer : IDisposable
 {
     private readonly GL _gl;
-    private CubeMesh? _cubeMesh;
-    private BeveledCubeMesh? _beveledMesh;
+    private readonly Dictionary<CellShape, IInstancedMesh> _meshes = new();
     private uint _instanceVbo;
     private int _maxInstances;
     private int _instanceCount;
@@ -24,12 +23,15 @@ public sealed class InstancedCubeRenderer : IDisposable
     // Pre-allocated buffer
     private InstanceData[] _instanceBuffer = [];
 
-    // Performance guard: disable beveled cubes above this threshold
+    // Performance guard: when the chosen shape is BeveledCube and the live
+    // instance count exceeds this threshold, fall back to the plain cube mesh.
+    // Other shapes (added by later tasks) have no fallback — they always
+    // render as themselves.
     private const int BeveledMaxInstances = 500_000;
 
     public int InstanceCount => _instanceCount;
 
-    public InstancedCubeRenderer(GL gl)
+    public InstancedCellRenderer(GL gl)
     {
         _gl = gl;
     }
@@ -39,8 +41,8 @@ public sealed class InstancedCubeRenderer : IDisposable
         _maxInstances = maxInstances;
         _instanceBuffer = new InstanceData[maxInstances];
 
-        _cubeMesh = new CubeMesh(_gl);
-        _beveledMesh = new BeveledCubeMesh(_gl);
+        _meshes[CellShape.Cube] = new CubeMesh(_gl);
+        _meshes[CellShape.BeveledCube] = new BeveledCubeMesh(_gl);
 
         _instanceVbo = _gl.GenBuffer();
 
@@ -53,9 +55,8 @@ public sealed class InstancedCubeRenderer : IDisposable
                 null, BufferUsageARB.DynamicDraw);
         }
 
-        // Bind instance attributes to both VAOs
-        BindInstanceAttributesToVAO(_cubeMesh.Vao);
-        BindInstanceAttributesToVAO(_beveledMesh.Vao);
+        foreach (var mesh in _meshes.Values)
+            BindInstanceAttributesToVAO(mesh.Vao);
     }
 
     private unsafe void BindInstanceAttributesToVAO(uint vao)
@@ -103,22 +104,23 @@ public sealed class InstancedCubeRenderer : IDisposable
 
     private void GetActiveMesh(RenderSettings settings, out uint vao, out uint indexCount)
     {
-        bool useBeveled = settings.UseBeveledCubes && _instanceCount <= BeveledMaxInstances && _beveledMesh != null;
-        if (useBeveled)
-        {
-            vao = _beveledMesh!.Vao;
-            indexCount = _beveledMesh.IndexCount;
-        }
-        else
-        {
-            vao = _cubeMesh!.Vao;
-            indexCount = _cubeMesh.IndexCount;
-        }
+        CellShape effective = settings.Shape;
+        // Beveled cube falls back to plain cube above the LOD threshold —
+        // preserves the original BeveledMaxInstances behavior.
+        if (effective == CellShape.BeveledCube && _instanceCount > BeveledMaxInstances)
+            effective = CellShape.Cube;
+
+        IInstancedMesh mesh = _meshes.TryGetValue(effective, out var m)
+            ? m
+            : _meshes[CellShape.Cube]; // defensive fallback for unknown enum values
+
+        vao = mesh.Vao;
+        indexCount = mesh.IndexCount;
     }
 
     public void RenderSolid(ShaderProgram shader, Matrix4x4 view, Matrix4x4 proj, float time, RenderSettings settings)
     {
-        if (_instanceCount == 0 || _cubeMesh == null) return;
+        if (_instanceCount == 0 || _meshes.Count == 0) return;
         UploadIfDirty();
 
         shader.Use();
@@ -157,7 +159,7 @@ public sealed class InstancedCubeRenderer : IDisposable
 
     public void RenderWireframe(ShaderProgram shader, Matrix4x4 view, Matrix4x4 proj, float time, RenderSettings settings)
     {
-        if (_instanceCount == 0 || _cubeMesh == null || !settings.ShowWireframe) return;
+        if (_instanceCount == 0 || _meshes.Count == 0 || !settings.ShowWireframe) return;
         UploadIfDirty();
 
         shader.Use();
@@ -244,8 +246,9 @@ public sealed class InstancedCubeRenderer : IDisposable
 
     public void Dispose()
     {
-        _cubeMesh?.Dispose();
-        _beveledMesh?.Dispose();
+        foreach (var mesh in _meshes.Values)
+            mesh.Dispose();
+        _meshes.Clear();
         if (_instanceVbo != 0)
             _gl.DeleteBuffer(_instanceVbo);
     }

@@ -76,8 +76,9 @@ public sealed class ImGuiUI
     private float _bloomThreshold = 0.6f;
     private float _bloomIntensity = 0.5f;
 
-    // Beveled cubes
-    private bool _useBeveledCubes = true;
+    // Cell shape — mirrors RenderSettings.Shape; the int form drives ImGui.Combo.
+    private int _shape = (int)CellShape.BeveledCube;
+    private static readonly string[] ShapeNames = { "Cube", "Rounded Cube" };
 
     // Population stats
     private float[] _populationData = [];
@@ -947,8 +948,8 @@ public sealed class ImGuiUI
             if (ImGui.Checkbox("Generation Labels", ref _showGenerationLabels))
                 settings.ShowGenerationLabels = _showGenerationLabels;
 
-            if (ImGui.Checkbox("Rounded Cubes", ref _useBeveledCubes))
-                settings.UseBeveledCubes = _useBeveledCubes;
+            if (ImGui.Combo("Cell Shape", ref _shape, ShapeNames, ShapeNames.Length))
+                settings.Shape = (CellShape)_shape;
 
             UIHelpers.ThinSeparator();
 
@@ -1613,6 +1614,6 @@ public sealed class ImGuiUI
         _bloomEnabled = s.BloomEnabled;
         _bloomThreshold = s.BloomThreshold;
         _bloomIntensity = s.BloomIntensity;
-        _useBeveledCubes = s.UseBeveledCubes;
+        _shape = (int)s.Shape;
     }
 }
