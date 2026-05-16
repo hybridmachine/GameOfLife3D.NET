@@ -7,10 +7,9 @@ namespace GameOfLife3D.NET.Rendering;
 /// aGenerationT loc 3) are bound to every implementation's VAO at renderer
 /// initialization time, not by the mesh itself.
 ///
-/// The existing <c>CubeMesh</c> and <c>BeveledCubeMesh</c> classes are adapted
-/// to implement this interface in the following commit; they expose the right
-/// surface (Vao, IndexCount) already, so the adaptation is a one-word change
-/// per class.
+/// <c>CubeMesh</c> and <c>BeveledCubeMesh</c> both implement this interface;
+/// additional cell-shape meshes follow the same pattern so they slot into the
+/// renderer's shape registry uniformly.
 /// </summary>
 public interface IInstancedMesh : IDisposable
 {
