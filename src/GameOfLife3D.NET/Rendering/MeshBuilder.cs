@@ -14,13 +14,13 @@ public static class MeshBuilder
         (float X, float Y, float Z) c, (float X, float Y, float Z) d,
         (float X, float Y, float Z) normal)
     {
-        var ab = (b.X - a.X, b.Y - a.Y, b.Z - a.Z);
-        var ac = (c.X - a.X, c.Y - a.Y, c.Z - a.Z);
+        var ab = (X: b.X - a.X, Y: b.Y - a.Y, Z: b.Z - a.Z);
+        var ac = (X: c.X - a.X, Y: c.Y - a.Y, Z: c.Z - a.Z);
         var cross = (
-            ab.Item2 * ac.Item3 - ab.Item3 * ac.Item2,
-            ab.Item3 * ac.Item1 - ab.Item1 * ac.Item3,
-            ab.Item1 * ac.Item2 - ab.Item2 * ac.Item1);
-        float dot = cross.Item1 * normal.X + cross.Item2 * normal.Y + cross.Item3 * normal.Z;
+            X: ab.Y * ac.Z - ab.Z * ac.Y,
+            Y: ab.Z * ac.X - ab.X * ac.Z,
+            Z: ab.X * ac.Y - ab.Y * ac.X);
+        float dot = cross.X * normal.X + cross.Y * normal.Y + cross.Z * normal.Z;
 
         if (dot < 0)
             (b, d) = (d, b);
@@ -44,13 +44,13 @@ public static class MeshBuilder
         (float X, float Y, float Z) a, (float X, float Y, float Z) b, (float X, float Y, float Z) c,
         (float X, float Y, float Z) normal)
     {
-        var ab = (b.X - a.X, b.Y - a.Y, b.Z - a.Z);
-        var ac = (c.X - a.X, c.Y - a.Y, c.Z - a.Z);
+        var ab = (X: b.X - a.X, Y: b.Y - a.Y, Z: b.Z - a.Z);
+        var ac = (X: c.X - a.X, Y: c.Y - a.Y, Z: c.Z - a.Z);
         var cross = (
-            ab.Item2 * ac.Item3 - ab.Item3 * ac.Item2,
-            ab.Item3 * ac.Item1 - ab.Item1 * ac.Item3,
-            ab.Item1 * ac.Item2 - ab.Item2 * ac.Item1);
-        float dot = cross.Item1 * normal.X + cross.Item2 * normal.Y + cross.Item3 * normal.Z;
+            X: ab.Y * ac.Z - ab.Z * ac.Y,
+            Y: ab.Z * ac.X - ab.X * ac.Z,
+            Z: ab.X * ac.Y - ab.Y * ac.X);
+        float dot = cross.X * normal.X + cross.Y * normal.Y + cross.Z * normal.Z;
 
         if (dot < 0)
             (b, c) = (c, b);
@@ -66,6 +66,10 @@ public static class MeshBuilder
         indices.Add(baseIdx + 2);
     }
 
+    /// <summary>
+    /// Appends a single flat-shaded vertex (position then normal, 6 floats) to
+    /// <paramref name="verts"/>. No winding correction is applied.
+    /// </summary>
     public static void AddVertex(List<float> verts,
         (float X, float Y, float Z) pos, (float X, float Y, float Z) normal)
     {
