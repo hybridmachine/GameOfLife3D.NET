@@ -78,8 +78,14 @@ public sealed class RenderSessionData
     public float BloomThreshold { get; set; } = 0.6f;
     public float BloomIntensity { get; set; } = 0.5f;
 
-    // Beveled cubes
-    public bool UseBeveledCubes { get; set; }
+    // Cell shape. Nullable so loaders can tell "field absent" (legacy) from
+    // "explicit value". Legacy `UseBeveledCubes` is kept for one release as a
+    // fallback for sessions saved before this feature landed.
+    public int? Shape { get; set; }
+
+    // Legacy field — only read on load when `Shape` is null. Never written
+    // by `FromRenderSettings` anymore.
+    public bool? UseBeveledCubes { get; set; }
 
     // Reflective-floor / water tuning. Nullable so legacy sessions adopt the
     // current code defaults instead of zero-filled values.
@@ -185,8 +191,8 @@ public static class SessionManager
         BloomEnabled = s.BloomEnabled,
         BloomThreshold = s.BloomThreshold,
         BloomIntensity = s.BloomIntensity,
-        // Beveled cubes
-        UseBeveledCubes = s.UseBeveledCubes,
+        // Cell shape (new field; legacy UseBeveledCubes intentionally not written)
+        Shape = (int)s.Shape,
         // Reflective floor / water
         WaveStrength = s.WaveStrength,
         WaveSpeed = s.WaveSpeed,
@@ -250,8 +256,23 @@ public static class SessionManager
         target.BloomEnabled = data.BloomEnabled;
         target.BloomThreshold = data.BloomThreshold;
         target.BloomIntensity = data.BloomIntensity;
-        // Beveled cubes
-        target.UseBeveledCubes = data.UseBeveledCubes;
+        // Cell shape: prefer the new field, fall back to the legacy
+        // UseBeveledCubes bool for sessions saved before this feature landed.
+        // Use Enum.IsDefined rather than clamping so a session written by a
+        // newer build with an unknown shape value falls back to the renderer
+        // default explicitly (instead of silently saturating to the highest
+        // known enum value).
+        if (data.Shape.HasValue)
+        {
+            int raw = data.Shape.Value;
+            target.Shape = Enum.IsDefined(typeof(CellShape), raw)
+                ? (CellShape)raw
+                : CellShape.BeveledCube;
+        }
+        else if (data.UseBeveledCubes.HasValue)
+        {
+            target.Shape = data.UseBeveledCubes.Value ? CellShape.BeveledCube : CellShape.Cube;
+        }
         // Reflective floor / water — each field falls back to the current
         // setting on the target if the session predates that field.
         if (data.WaveStrength.HasValue) target.WaveStrength = data.WaveStrength.Value;

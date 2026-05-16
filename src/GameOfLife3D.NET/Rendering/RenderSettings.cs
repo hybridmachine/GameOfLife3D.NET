@@ -73,8 +73,9 @@ public sealed class RenderSettings
     public float BloomThreshold { get; set; } = 0.6f;
     public float BloomIntensity { get; set; } = 0.5f;
 
-    // Beveled cubes
-    public bool UseBeveledCubes { get; set; } = true;
+    // Cell shape — chosen mesh for all alive cells. Default matches the old
+    // first-run behavior when UseBeveledCubes defaulted to true.
+    public CellShape Shape { get; set; } = CellShape.BeveledCube;
 
     // Generation fade-in (cinematic mode)
     public float FadeGeneration { get; set; } = -1f;

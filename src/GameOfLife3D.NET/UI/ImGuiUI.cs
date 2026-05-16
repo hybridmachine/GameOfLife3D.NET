@@ -76,8 +76,9 @@ public sealed class ImGuiUI
     private float _bloomThreshold = 0.6f;
     private float _bloomIntensity = 0.5f;
 
-    // Beveled cubes
-    private bool _useBeveledCubes = true;
+    // Cell shape — mirrors RenderSettings.Shape; the int form drives ImGui.Combo.
+    private int _shape = (int)CellShape.BeveledCube;
+    private static readonly string[] ShapeNames = { "Cube", "Rounded Cube", "Tetrahedron", "Octahedron", "Pyramid", "Icosahedron", "Dodecahedron", "Sphere", "Capsule" };
 
     // Population stats
     private float[] _populationData = [];
@@ -947,8 +948,28 @@ public sealed class ImGuiUI
             if (ImGui.Checkbox("Generation Labels", ref _showGenerationLabels))
                 settings.ShowGenerationLabels = _showGenerationLabels;
 
-            if (ImGui.Checkbox("Rounded Cubes", ref _useBeveledCubes))
-                settings.UseBeveledCubes = _useBeveledCubes;
+            // Cell shape — combo rows show a thumbnail next to each name.
+            var thumbnails = _renderer.ShapeThumbnails;
+            if (ImGui.BeginCombo("Cell Shape", ShapeNames[_shape]))
+            {
+                for (int i = 0; i < ShapeNames.Length; i++)
+                {
+                    bool isSelected = (i == _shape);
+                    var thumb = thumbnails?.GetTexture((CellShape)i);
+                    if (thumb.HasValue)
+                    {
+                        ImGui.Image((IntPtr)thumb.Value, new Vector2(24, 24));
+                        ImGui.SameLine();
+                    }
+                    if (ImGui.Selectable(ShapeNames[i], isSelected))
+                    {
+                        _shape = i;
+                        settings.Shape = (CellShape)i;
+                    }
+                    if (isSelected) ImGui.SetItemDefaultFocus();
+                }
+                ImGui.EndCombo();
+            }
 
             UIHelpers.ThinSeparator();
 
@@ -1613,6 +1634,6 @@ public sealed class ImGuiUI
         _bloomEnabled = s.BloomEnabled;
         _bloomThreshold = s.BloomThreshold;
         _bloomIntensity = s.BloomIntensity;
-        _useBeveledCubes = s.UseBeveledCubes;
+        _shape = Math.Clamp((int)s.Shape, 0, ShapeNames.Length - 1);
     }
 }
