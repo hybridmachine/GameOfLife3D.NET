@@ -78,7 +78,7 @@ public sealed class ImGuiUI
 
     // Cell shape — mirrors RenderSettings.Shape; the int form drives ImGui.Combo.
     private int _shape = (int)CellShape.BeveledCube;
-    private static readonly string[] ShapeNames = { "Cube", "Rounded Cube", "Tetrahedron", "Octahedron", "Pyramid", "Icosahedron", "Dodecahedron", "Sphere" };
+    private static readonly string[] ShapeNames = { "Cube", "Rounded Cube", "Tetrahedron", "Octahedron", "Pyramid", "Icosahedron", "Dodecahedron", "Sphere", "Capsule" };
 
     // Population stats
     private float[] _populationData = [];
