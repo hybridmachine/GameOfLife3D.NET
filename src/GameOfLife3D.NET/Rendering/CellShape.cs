@@ -12,4 +12,5 @@ public enum CellShape
     Tetrahedron = 2,
     Octahedron = 3,
     SquarePyramid = 4,
+    Icosahedron = 5,
 }
