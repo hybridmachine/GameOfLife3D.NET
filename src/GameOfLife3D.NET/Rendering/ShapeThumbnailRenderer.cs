@@ -31,9 +31,14 @@ public sealed class ShapeThumbnailRenderer : IDisposable
         => _textures.TryGetValue(shape, out var id) ? id : null;
 
     /// <summary>
-    /// Renders one 32x32 RGBA thumbnail per supplied mesh into a fresh GL
-    /// texture. Saves and restores the previous viewport and framebuffer
-    /// binding so the caller's render setup isn't disturbed.
+    /// Renders one 32×32 RGBA thumbnail per supplied mesh into a fresh GL
+    /// texture. Saves and restores the previous viewport, framebuffer binding,
+    /// and depth-test state.
+    ///
+    /// Intended to be called exactly once at startup, before any scene shader
+    /// or texture is bound. The method does not save/restore the active shader
+    /// program or the GL_TEXTURE_BINDING_2D unit; if a future caller invokes
+    /// it mid-frame those bindings will be clobbered.
     /// </summary>
     public unsafe void Render(IReadOnlyDictionary<CellShape, IInstancedMesh> meshes)
     {

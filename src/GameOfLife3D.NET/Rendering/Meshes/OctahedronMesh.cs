@@ -23,7 +23,7 @@ public sealed class OctahedronMesh : IInstancedMesh
         Generate();
     }
 
-    private unsafe void Generate()
+    private void Generate()
     {
         var verts = new List<float>();
         var idx = new List<uint>();
@@ -54,42 +54,7 @@ public sealed class OctahedronMesh : IInstancedMesh
         Face(nx, ny, nz, -1f, -1f, -1f);
 
         IndexCount = (uint)idx.Count;
-        UploadAndBind(verts.ToArray(), idx.ToArray(), out _vao, out _vbo, out _ebo, _gl);
-    }
-
-    /// <summary>
-    /// Shared GL setup used by the cell-shape meshes. Generates a VAO + VBO +
-    /// EBO, uploads the position+normal vertex array and the unsigned-int
-    /// index array, and configures attribute pointers (loc 0 = position, loc
-    /// 1 = normal, stride 24 bytes). Reused by later mesh classes so they
-    /// don't duplicate this boilerplate.
-    /// </summary>
-    internal static unsafe void UploadAndBind(float[] vertArr, uint[] idxArr,
-        out uint vao, out uint vbo, out uint ebo, GL gl)
-    {
-        vao = gl.GenVertexArray();
-        vbo = gl.GenBuffer();
-        ebo = gl.GenBuffer();
-
-        gl.BindVertexArray(vao);
-
-        gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo);
-        fixed (float* p = vertArr)
-            gl.BufferData(BufferTargetARB.ArrayBuffer,
-                (nuint)(vertArr.Length * sizeof(float)), p, BufferUsageARB.StaticDraw);
-
-        gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, ebo);
-        fixed (uint* p = idxArr)
-            gl.BufferData(BufferTargetARB.ElementArrayBuffer,
-                (nuint)(idxArr.Length * sizeof(uint)), p, BufferUsageARB.StaticDraw);
-
-        uint stride = 6 * sizeof(float);
-        gl.EnableVertexAttribArray(0);
-        gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, (void*)0);
-        gl.EnableVertexAttribArray(1);
-        gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float)));
-
-        gl.BindVertexArray(0);
+        MeshBuilder.UploadAndBind(verts.ToArray(), idx.ToArray(), out _vao, out _vbo, out _ebo, _gl);
     }
 
     public void Dispose()

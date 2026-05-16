@@ -21,6 +21,14 @@ public sealed class IcosahedronMesh : IInstancedMesh
     // exposed for IcosphereMesh (which subdivides them) and DodecahedronMesh
     // (which uses them via the icosa-dual construction).
     internal static readonly (float X, float Y, float Z)[] BaseVertices;
+    /// <summary>
+    /// 20 face triples (60 ints), each three consecutive entries naming the
+    /// vertex indices of one triangular face. Consumed by <see cref="IcosphereMesh"/>
+    /// (which subdivides each face into four) and <see cref="DodecahedronMesh"/>
+    /// (which treats each icosa vertex as the center of a dodecahedron face and
+    /// requires the invariant that every vertex appears in exactly five faces).
+    /// Do not reorder or split; downstream code depends on the layout.
+    /// </summary>
     internal static readonly int[] BaseFaces =
     {
         0, 11,  5,    0,  5,  1,    0,  1,  7,    0,  7, 10,   0, 10, 11,
@@ -74,7 +82,7 @@ public sealed class IcosahedronMesh : IInstancedMesh
         }
 
         IndexCount = (uint)idx.Count;
-        OctahedronMesh.UploadAndBind(verts.ToArray(), idx.ToArray(),
+        MeshBuilder.UploadAndBind(verts.ToArray(), idx.ToArray(),
             out _vao, out _vbo, out _ebo, _gl);
     }
 

@@ -43,7 +43,7 @@ public sealed class SquarePyramidMesh : IInstancedMesh
         MeshBuilder.AddQuad(verts, idx, bl, br, tr, tl, (0f, -1f, 0f));
 
         IndexCount = (uint)idx.Count;
-        OctahedronMesh.UploadAndBind(verts.ToArray(), idx.ToArray(),
+        MeshBuilder.UploadAndBind(verts.ToArray(), idx.ToArray(),
             out _vao, out _vbo, out _ebo, _gl);
     }
 

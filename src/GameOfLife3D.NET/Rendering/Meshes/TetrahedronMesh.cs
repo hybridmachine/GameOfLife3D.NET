@@ -24,7 +24,7 @@ public sealed class TetrahedronMesh : IInstancedMesh
         Generate();
     }
 
-    private unsafe void Generate()
+    private void Generate()
     {
         var verts = new List<float>();
         var idx = new List<uint>();
@@ -44,33 +44,8 @@ public sealed class TetrahedronMesh : IInstancedMesh
         MeshBuilder.AddTriangle(verts, idx, b, d, c, Centroid(b, d, c));
 
         IndexCount = (uint)idx.Count;
-
-        _vao = _gl.GenVertexArray();
-        _vbo = _gl.GenBuffer();
-        _ebo = _gl.GenBuffer();
-
-        _gl.BindVertexArray(_vao);
-
-        var vertArr = verts.ToArray();
-        var idxArr = idx.ToArray();
-
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
-        fixed (float* p = vertArr)
-            _gl.BufferData(BufferTargetARB.ArrayBuffer,
-                (nuint)(vertArr.Length * sizeof(float)), p, BufferUsageARB.StaticDraw);
-
-        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, _ebo);
-        fixed (uint* p = idxArr)
-            _gl.BufferData(BufferTargetARB.ElementArrayBuffer,
-                (nuint)(idxArr.Length * sizeof(uint)), p, BufferUsageARB.StaticDraw);
-
-        uint stride = 6 * sizeof(float);
-        _gl.EnableVertexAttribArray(0);
-        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, (void*)0);
-        _gl.EnableVertexAttribArray(1);
-        _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float)));
-
-        _gl.BindVertexArray(0);
+        MeshBuilder.UploadAndBind(verts.ToArray(), idx.ToArray(),
+            out _vao, out _vbo, out _ebo, _gl);
     }
 
     private static (float, float, float) Centroid(

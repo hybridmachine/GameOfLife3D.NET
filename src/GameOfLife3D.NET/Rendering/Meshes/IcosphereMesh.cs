@@ -84,7 +84,7 @@ public sealed class IcosphereMesh : IInstancedMesh
         }
 
         IndexCount = (uint)idx.Count;
-        OctahedronMesh.UploadAndBind(verts.ToArray(), idx.ToArray(),
+        MeshBuilder.UploadAndBind(verts.ToArray(), idx.ToArray(),
             out _vao, out _vbo, out _ebo, _gl);
     }
 
