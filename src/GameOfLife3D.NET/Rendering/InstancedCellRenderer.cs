@@ -31,6 +31,13 @@ public sealed class InstancedCellRenderer : IDisposable
 
     public int InstanceCount => _instanceCount;
 
+    /// <summary>
+    /// Read-only view of the registered shape meshes, used by
+    /// ShapeThumbnailRenderer at startup to render each mesh once into a
+    /// thumbnail texture.
+    /// </summary>
+    public IReadOnlyDictionary<CellShape, IInstancedMesh> GetMeshes() => _meshes;
+
     public InstancedCellRenderer(GL gl)
     {
         _gl = gl;

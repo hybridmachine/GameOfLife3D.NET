@@ -21,6 +21,7 @@ public sealed class Renderer3D : IDisposable
     private ReflectiveFloorRenderer? _floorRenderer;
     private PostProcessPipeline? _postProcess;
     private BloomEffect? _bloom;
+    private ShapeThumbnailRenderer? _shapeThumbnails;
 
     private readonly RenderSettings _settings = new();
     private int _gridSize = 50;
@@ -38,6 +39,7 @@ public sealed class Renderer3D : IDisposable
 
     public RenderSettings Settings => _settings;
     public PostProcessPipeline? PostProcess => _postProcess;
+    public ShapeThumbnailRenderer? ShapeThumbnails => _shapeThumbnails;
 
     public Renderer3D(GL gl)
     {
@@ -53,6 +55,9 @@ public sealed class Renderer3D : IDisposable
 
         _instancedRenderer = new InstancedCellRenderer(_gl);
         _instancedRenderer.Initialize();
+
+        _shapeThumbnails = new ShapeThumbnailRenderer(_gl);
+        _shapeThumbnails.Render(_instancedRenderer.GetMeshes());
 
         _gridRenderer = new GridRenderer(_gl);
         _gridRenderer.UpdateGrid(_gridSize);
@@ -310,5 +315,6 @@ public sealed class Renderer3D : IDisposable
         _floorShader?.Dispose();
         _postProcess?.Dispose();
         _bloom?.Dispose();
+        _shapeThumbnails?.Dispose();
     }
 }
