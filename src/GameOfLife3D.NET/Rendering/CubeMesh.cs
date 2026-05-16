@@ -2,7 +2,7 @@ using Silk.NET.OpenGL;
 
 namespace GameOfLife3D.NET.Rendering;
 
-public sealed class CubeMesh : IDisposable
+public sealed class CubeMesh : IInstancedMesh
 {
     private readonly GL _gl;
     private uint _vao;
