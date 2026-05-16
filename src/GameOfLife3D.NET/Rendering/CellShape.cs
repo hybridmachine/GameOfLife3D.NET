@@ -11,4 +11,5 @@ public enum CellShape
     BeveledCube = 1,
     Tetrahedron = 2,
     Octahedron = 3,
+    SquarePyramid = 4,
 }
