@@ -28,6 +28,7 @@ public sealed class CinematicController
         "mwss",
         "hwss",
     ];
+    private static readonly CellShape[] AllCellShapes = Enum.GetValues<CellShape>();
 
     private readonly GameEngine _engine;
     private readonly CameraController _camera;
@@ -73,7 +74,7 @@ public sealed class CinematicController
         _savedGradientStops = new List<Vector3>(_renderer.Settings.GradientStops);
         _lastPaletteIndex = ResolveCurrentPaletteIndex(_renderer.Settings.GradientStops);
         _savedShape = _renderer.Settings.Shape;
-        _lastShapeIndex = (int)_renderer.Settings.Shape;
+        _lastShapeIndex = Array.IndexOf(AllCellShapes, _renderer.Settings.Shape);
         _ui.Pause();
         StartNewCycle(currentTime);
     }
@@ -257,13 +258,13 @@ public sealed class CinematicController
     private void ApplyNextCellShape()
     {
         int next = PickNextCellShapeIndex();
-        _renderer.Settings.Shape = (CellShape)next;
+        _renderer.Settings.Shape = AllCellShapes[next];
         _lastShapeIndex = next;
     }
 
     private int PickNextCellShapeIndex()
     {
-        int n = Enum.GetValues<CellShape>().Length;
+        int n = AllCellShapes.Length;
         if (n <= 1) return 0;
         if (_lastShapeIndex < 0) return Random.Shared.Next(n);
         int next = Random.Shared.Next(n - 1);
