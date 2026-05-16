@@ -48,6 +48,7 @@ public sealed class InstancedCellRenderer : IDisposable
         _meshes[CellShape.SquarePyramid] = new Meshes.SquarePyramidMesh(_gl);
         _meshes[CellShape.Icosahedron] = new Meshes.IcosahedronMesh(_gl);
         _meshes[CellShape.Dodecahedron] = new Meshes.DodecahedronMesh(_gl);
+        _meshes[CellShape.Sphere] = new Meshes.IcosphereMesh(_gl);
 
         _instanceVbo = _gl.GenBuffer();
 

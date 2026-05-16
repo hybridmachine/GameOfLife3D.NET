@@ -14,4 +14,5 @@ public enum CellShape
     SquarePyramid = 4,
     Icosahedron = 5,
     Dodecahedron = 6,
+    Sphere = 7,
 }
