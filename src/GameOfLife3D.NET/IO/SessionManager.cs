@@ -258,9 +258,16 @@ public static class SessionManager
         target.BloomIntensity = data.BloomIntensity;
         // Cell shape: prefer the new field, fall back to the legacy
         // UseBeveledCubes bool for sessions saved before this feature landed.
+        // Use Enum.IsDefined rather than clamping so a session written by a
+        // newer build with an unknown shape value falls back to the renderer
+        // default explicitly (instead of silently saturating to the highest
+        // known enum value).
         if (data.Shape.HasValue)
         {
-            target.Shape = (CellShape)Math.Clamp(data.Shape.Value, 0, 1);
+            int raw = data.Shape.Value;
+            target.Shape = Enum.IsDefined(typeof(CellShape), raw)
+                ? (CellShape)raw
+                : CellShape.BeveledCube;
         }
         else if (data.UseBeveledCubes.HasValue)
         {

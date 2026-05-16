@@ -1614,6 +1614,6 @@ public sealed class ImGuiUI
         _bloomEnabled = s.BloomEnabled;
         _bloomThreshold = s.BloomThreshold;
         _bloomIntensity = s.BloomIntensity;
-        _shape = (int)s.Shape;
+        _shape = Math.Clamp((int)s.Shape, 0, ShapeNames.Length - 1);
     }
 }
