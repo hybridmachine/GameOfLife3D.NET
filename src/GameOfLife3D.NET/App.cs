@@ -48,6 +48,7 @@ public sealed class App : IDisposable
     private bool _escWasDown;
     private bool _zeroWasDown;
     private bool _fWasDown;
+    private bool _tWasDown;
 
     // Cinematic mode
     private CinematicController? _cinematic;
@@ -280,6 +281,7 @@ public sealed class App : IDisposable
             _escWasDown = false;
             _zeroWasDown = false;
             _fWasDown = false;
+            _tWasDown = false;
         }
 
         // Update systems — same path whether recording or not.
@@ -407,6 +409,7 @@ public sealed class App : IDisposable
         bool rDown = false;
         bool escDown = false;
         bool zeroDown = false;
+        bool tDown = false;
         bool ctrlDown = IsShortcutModifierDown();
 
         foreach (var keyboard in _input!.Keyboards)
@@ -419,6 +422,7 @@ public sealed class App : IDisposable
             if (keyboard.IsKeyPressed(Key.R)) rDown = true;
             if (keyboard.IsKeyPressed(Key.Escape)) escDown = true;
             if (keyboard.IsKeyPressed(Key.Number0) || keyboard.IsKeyPressed(Key.Keypad0)) zeroDown = true;
+            if (keyboard.IsKeyPressed(Key.T)) tDown = true;
         }
 
         // Space: play/pause
@@ -464,6 +468,11 @@ public sealed class App : IDisposable
         if (zeroDown && !_zeroWasDown)
             _camera?.StartAutoOrbit();
         _zeroWasDown = zeroDown;
+
+        // T: toggle timeline
+        if (tDown && !_tWasDown)
+            _ui!.ToggleTimeline();
+        _tWasDown = tDown;
 
         // F: toggle flythrough
         bool fDown = false;
