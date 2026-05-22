@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh release:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(dotnet tool:*)",
+      "Bash(where signtool.exe)",
+      "Read(//c/Users/brian/.nuget/**)",
+      "Bash(az account:*)",
+      "Bash(nuget install:*)",
+      "Bash(mkdir -p /c/Users/brian/Desktop/Source/GameOfLife3D.NET/signing/nuget-packages)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet add:*)",
+      "WebSearch",
+      "Bash(gh api *)",
+      "Bash(mkdir -p build/Windows)",
+      "Bash(cp \"src/GameOfLife3D.NET/bin/Release/net10.0/win-x64/publish/GameOfLife3D.NET.exe\" build/Windows/)",
+      "Bash(powershell -NoProfile -Command \"Compress-Archive -Path 'GameOfLife3D.NET.exe' -DestinationPath 'GameOfLife3D.NET-win-x64.zip' -Force\")"
+    ]
+  }
+}

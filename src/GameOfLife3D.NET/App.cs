@@ -37,6 +37,7 @@ public sealed class App : IDisposable
     private UiSettingsState _uiSettings = new();
     private float _currentFontSize = UiSettingsState.BaseFontSize;
     private double _startTime;
+    private bool _exitRequested;
     private bool _spaceWasDown;
     private bool _f12WasDown;
 
@@ -172,7 +173,7 @@ public sealed class App : IDisposable
         _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _patternLibrary, _editController);
         _ui.SyncDisplayRange();
         _ui.OnScreenshotRequested = TakeScreenshot;
-        _ui.OnExitRequested = () => _window?.Close();
+        _ui.OnExitRequested = () => _exitRequested = true;
         _ui.OnCinematicToggleRequested = ToggleCinematicMode;
         _ui.OnExportSTL = path => ExportModel(path, "stl");
         _ui.OnExportOBJ = path => ExportModel(path, "obj");
@@ -353,6 +354,10 @@ public sealed class App : IDisposable
         // Render ImGui UI. Capture happens before ImGui draws, so the HUD is never in the recording.
         _ui.Render(logicalSize.X, logicalSize.Y);
         _imGuiController.Render();
+
+        // Defer window close to after ImGui rendering is complete
+        if (_exitRequested)
+            _window?.Close();
     }
 
     private void SetFontSizeOverride(float fontSize)
