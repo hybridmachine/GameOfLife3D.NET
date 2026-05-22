@@ -172,6 +172,8 @@ public sealed class App : IDisposable
         _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _patternLibrary, _editController);
         _ui.SyncDisplayRange();
         _ui.OnScreenshotRequested = TakeScreenshot;
+        _ui.OnExitRequested = () => _window?.Close();
+        _ui.OnCinematicToggleRequested = ToggleCinematicMode;
         _ui.OnExportSTL = path => ExportModel(path, "stl");
         _ui.OnExportOBJ = path => ExportModel(path, "obj");
         _ui.OnExportRLE = ExportRLE;
@@ -538,6 +540,28 @@ public sealed class App : IDisposable
         return false;
     }
 
+    private void ToggleCinematicMode()
+    {
+        if (_cinematic == null || _window == null) return;
+
+        double currentTime = _window.Time;
+        if (_cinematic.IsActive)
+        {
+            _cinematic.Stop();
+            _ui!.IsCinematicModeActive = false;
+        }
+        else
+        {
+            // Deactivate edit mode if active
+            if (_editController is { IsActive: true })
+                _editController.Deactivate();
+
+            _ui!.IsCinematicModeActive = true;
+            _ui.StartCinematicHint(currentTime);
+            _cinematic.Start(currentTime);
+        }
+    }
+
     private void HandleCinematicShortcuts(double currentTime)
     {
         if (_cinematic == null || _input == null) return;
@@ -552,23 +576,7 @@ public sealed class App : IDisposable
 
         // P toggles cinematic mode on/off (always active, even during ImGui keyboard capture)
         if (pDown && !_pWasDown)
-        {
-            if (_cinematic.IsActive)
-            {
-                _cinematic.Stop();
-                _ui!.IsCinematicModeActive = false;
-            }
-            else
-            {
-                // Deactivate edit mode if active
-                if (_editController is { IsActive: true })
-                    _editController.Deactivate();
-
-                _ui!.IsCinematicModeActive = true;
-                _ui.StartCinematicHint(currentTime);
-                _cinematic.Start(currentTime);
-            }
-        }
+            ToggleCinematicMode();
 
         // Escape exits cinematic mode (if active)
         if (escDown && !_escCinematicWasDown && _cinematic.IsActive)

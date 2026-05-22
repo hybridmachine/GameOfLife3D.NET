@@ -103,6 +103,7 @@ public sealed class ImGuiUI
     private bool _showPatternLibraryWindow;
     private bool _showRandomSeedPopup;
     private bool _showGradientPopup;
+    private bool _showCellColorPopup;
     private bool _showFogPopup;
     private bool _showBloomPopup;
     private bool _showClipPlanePopup;
@@ -147,6 +148,12 @@ public sealed class ImGuiUI
 
     // Screenshot callback
     public Action? OnScreenshotRequested { get; set; }
+
+    // Exit callback
+    public Action? OnExitRequested { get; set; }
+
+    // Cinematic mode callback
+    public Action? OnCinematicToggleRequested { get; set; }
 
     // Recording settings (read by App when Ctrl+R is pressed)
     public int RecordingDurationSeconds { get; set; } = 10;
@@ -463,7 +470,7 @@ public sealed class ImGuiUI
         RenderPatternsMenu();
         RenderHelpMenu();
 
-        ImGui.EndMenuBar();
+        ImGui.EndMainMenuBar();
     }
 
     private void RenderFloatingWindows()
@@ -473,6 +480,7 @@ public sealed class ImGuiUI
         if (_showRandomSeedPopup) RenderRandomSeedPopup();
         if (_showCustomRulePopup) RenderCustomRulePopup();
         if (_showGradientPopup) RenderGradientPopup();
+        if (_showCellColorPopup) RenderCellColorPopup();
         if (_showFogPopup) RenderFogPopup();
         if (_showBloomPopup) RenderBloomPopup();
         if (_showClipPlanePopup) RenderClipPlanePopup();
@@ -605,7 +613,7 @@ public sealed class ImGuiUI
         ImGui.Separator();
 
         if (ImGui.MenuItem("Exit"))
-            Environment.Exit(0);
+            OnExitRequested?.Invoke();
 
         ImGui.EndMenu();
     }
@@ -813,9 +821,7 @@ public sealed class ImGuiUI
         }
 
         if (ImGui.MenuItem("Cinematic Mode", "P", IsCinematicModeActive))
-        {
-            // Cinematic mode is toggled via App.cs keyboard handler
-        }
+            OnCinematicToggleRequested?.Invoke();
 
         ImGui.EndMenu();
     }
@@ -897,6 +903,11 @@ public sealed class ImGuiUI
             {
                 if (ImGui.MenuItem("Gradient Editor..."))
                     _showGradientPopup = true;
+            }
+            else
+            {
+                if (ImGui.MenuItem("Cell Color..."))
+                    _showCellColorPopup = true;
             }
 
             if (_showWireframe)
@@ -1356,6 +1367,26 @@ public sealed class ImGuiUI
         ImGui.End();
     }
 
+    private void RenderCellColorPopup()
+    {
+        ImGui.SetNextWindowSize(new Vector2(300, 0), ImGuiCond.Always);
+        if (!ImGui.Begin("Cell Color", ref _showCellColorPopup,
+                ImGuiWindowFlags.NoResize | ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.End();
+            return;
+        }
+
+        var settings = _renderer.Settings;
+        float fullWidth = ImGui.GetContentRegionAvail().X;
+
+        ImGui.SetNextItemWidth(fullWidth);
+        if (ImGui.ColorEdit3("Cell Color", ref _cellColor))
+            settings.CellColor = _cellColor;
+
+        ImGui.End();
+    }
+
     private void RenderFogPopup()
     {
         ImGui.SetNextWindowSize(new Vector2(300, 0), ImGuiCond.Always);
@@ -1496,13 +1527,6 @@ public sealed class ImGuiUI
         {
             settings.CellPadding = _cellPadding / 100f;
             _renderer.InvalidateState();
-        }
-
-        if (!_faceColorCycling)
-        {
-            ImGui.SetNextItemWidth(fullWidth);
-            if (ImGui.ColorEdit3("Cell Color", ref _cellColor))
-                settings.CellColor = _cellColor;
         }
 
         ImGui.End();
