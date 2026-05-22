@@ -37,6 +37,7 @@ public sealed class App : IDisposable
     private UiSettingsState _uiSettings = new();
     private float _currentFontSize = UiSettingsState.BaseFontSize;
     private double _startTime;
+    private bool _exitRequested;
     private bool _spaceWasDown;
     private bool _f12WasDown;
 
@@ -48,6 +49,7 @@ public sealed class App : IDisposable
     private bool _escWasDown;
     private bool _zeroWasDown;
     private bool _fWasDown;
+    private bool _tWasDown;
 
     // Cinematic mode
     private CinematicController? _cinematic;
@@ -171,6 +173,8 @@ public sealed class App : IDisposable
         _ui = new ImGuiUI(_engine, _renderer, _camera, _patternLoader, _patternLibrary, _editController);
         _ui.SyncDisplayRange();
         _ui.OnScreenshotRequested = TakeScreenshot;
+        _ui.OnExitRequested = () => _exitRequested = true;
+        _ui.OnCinematicToggleRequested = ToggleCinematicMode;
         _ui.OnExportSTL = path => ExportModel(path, "stl");
         _ui.OnExportOBJ = path => ExportModel(path, "obj");
         _ui.OnExportRLE = ExportRLE;
@@ -280,6 +284,7 @@ public sealed class App : IDisposable
             _escWasDown = false;
             _zeroWasDown = false;
             _fWasDown = false;
+            _tWasDown = false;
         }
 
         // Update systems — same path whether recording or not.
@@ -349,6 +354,10 @@ public sealed class App : IDisposable
         // Render ImGui UI. Capture happens before ImGui draws, so the HUD is never in the recording.
         _ui.Render(logicalSize.X, logicalSize.Y);
         _imGuiController.Render();
+
+        // Defer window close to after ImGui rendering is complete
+        if (_exitRequested)
+            _window?.Close();
     }
 
     private void SetFontSizeOverride(float fontSize)
@@ -407,6 +416,7 @@ public sealed class App : IDisposable
         bool rDown = false;
         bool escDown = false;
         bool zeroDown = false;
+        bool tDown = false;
         bool ctrlDown = IsShortcutModifierDown();
 
         foreach (var keyboard in _input!.Keyboards)
@@ -419,6 +429,7 @@ public sealed class App : IDisposable
             if (keyboard.IsKeyPressed(Key.R)) rDown = true;
             if (keyboard.IsKeyPressed(Key.Escape)) escDown = true;
             if (keyboard.IsKeyPressed(Key.Number0) || keyboard.IsKeyPressed(Key.Keypad0)) zeroDown = true;
+            if (keyboard.IsKeyPressed(Key.T)) tDown = true;
         }
 
         // Space: play/pause
@@ -464,6 +475,11 @@ public sealed class App : IDisposable
         if (zeroDown && !_zeroWasDown)
             _camera?.StartAutoOrbit();
         _zeroWasDown = zeroDown;
+
+        // T: toggle timeline
+        if (tDown && !_tWasDown)
+            _ui!.ToggleTimeline();
+        _tWasDown = tDown;
 
         // F: toggle flythrough
         bool fDown = false;
@@ -529,6 +545,28 @@ public sealed class App : IDisposable
         return false;
     }
 
+    private void ToggleCinematicMode()
+    {
+        if (_cinematic == null || _window == null) return;
+
+        double currentTime = _window.Time;
+        if (_cinematic.IsActive)
+        {
+            _cinematic.Stop();
+            _ui!.IsCinematicModeActive = false;
+        }
+        else
+        {
+            // Deactivate edit mode if active
+            if (_editController is { IsActive: true })
+                _editController.Deactivate();
+
+            _ui!.IsCinematicModeActive = true;
+            _ui.StartCinematicHint(currentTime);
+            _cinematic.Start(currentTime);
+        }
+    }
+
     private void HandleCinematicShortcuts(double currentTime)
     {
         if (_cinematic == null || _input == null) return;
@@ -543,23 +581,7 @@ public sealed class App : IDisposable
 
         // P toggles cinematic mode on/off (always active, even during ImGui keyboard capture)
         if (pDown && !_pWasDown)
-        {
-            if (_cinematic.IsActive)
-            {
-                _cinematic.Stop();
-                _ui!.IsCinematicModeActive = false;
-            }
-            else
-            {
-                // Deactivate edit mode if active
-                if (_editController is { IsActive: true })
-                    _editController.Deactivate();
-
-                _ui!.IsCinematicModeActive = true;
-                _ui.StartCinematicHint(currentTime);
-                _cinematic.Start(currentTime);
-            }
-        }
+            ToggleCinematicMode();
 
         // Escape exits cinematic mode (if active)
         if (escDown && !_escCinematicWasDown && _cinematic.IsActive)
