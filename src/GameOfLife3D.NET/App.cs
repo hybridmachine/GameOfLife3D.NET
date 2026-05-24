@@ -175,6 +175,7 @@ public sealed class App : IDisposable
         _ui.OnScreenshotRequested = TakeScreenshot;
         _ui.OnExitRequested = () => _exitRequested = true;
         _ui.OnCinematicToggleRequested = ToggleCinematicMode;
+        _ui.OnRecordingStartRequested = StartRecording;
         _ui.OnExportSTL = path => ExportModel(path, "stl");
         _ui.OnExportOBJ = path => ExportModel(path, "obj");
         _ui.OnExportRLE = ExportRLE;
@@ -651,6 +652,7 @@ public sealed class App : IDisposable
     private void StartRecording()
     {
         if (_recording == null || _ui == null || _renderer?.PostProcess == null) return;
+        _ui.OpenRecordingWindow();
         if (_recording.IsActive) return;
 
         string? ffmpegPath = FfmpegEncoder.LocateBinary();

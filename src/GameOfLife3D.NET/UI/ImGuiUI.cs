@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Xml.Linq;
 using GameOfLife3D.NET.Camera;
 using GameOfLife3D.NET.Editing;
 using GameOfLife3D.NET.Engine;
@@ -102,6 +103,7 @@ public sealed class ImGuiUI
     private bool _isTimelineVisible = true;
     private bool _showPatternLibraryWindow;
     private bool _showRandomSeedPopup;
+    private bool _showRecordingPopup;
     private bool _showGradientPopup;
     private bool _showCellColorPopup;
     private bool _showFogPopup;
@@ -122,6 +124,7 @@ public sealed class ImGuiUI
     private static readonly int[] GridSizeValues = [25, 50, 75, 100, 150, 200];
     private static readonly string[] RuleNames;
     private static readonly string[] RuleKeys;
+    private static readonly string AppVersion = LoadAppVersion();
 
     static ImGuiUI()
     {
@@ -154,6 +157,9 @@ public sealed class ImGuiUI
 
     // Cinematic mode callback
     public Action? OnCinematicToggleRequested { get; set; }
+
+    // Recording callback
+    public Action? OnRecordingStartRequested { get; set; }
 
     // Recording settings (read by App when Ctrl+R is pressed)
     public int RecordingDurationSeconds { get; set; } = 10;
@@ -229,6 +235,11 @@ public sealed class ImGuiUI
     public void ToggleTimeline()
     {
         _isTimelineVisible = !_isTimelineVisible;
+    }
+
+    public void OpenRecordingWindow()
+    {
+        _showRecordingPopup = true;
     }
 
     public void Tick(double currentTime)
@@ -318,6 +329,17 @@ public sealed class ImGuiUI
         _displayEnd = end;
     }
 
+    private void SeekDisplayEnd(int end)
+    {
+        int maxGen = Math.Max(0, _engine.GenerationCount - 1);
+        int clampedEnd = Math.Clamp(end, 0, maxGen);
+        int clampedStart = Math.Min(_displayStart, clampedEnd);
+
+        _timeline.SetTotalGenerations(_engine.GenerationCount);
+        _timeline.SetRange(clampedStart, clampedEnd);
+        OnRangeChanged(clampedStart, clampedEnd);
+    }
+
     private void OnReset()
     {
         _isPlaying = false;
@@ -332,6 +354,7 @@ public sealed class ImGuiUI
         if (pattern != null)
             _engine.InitializeFromPattern(pattern);
 
+        _renderer.InvalidateState();
         SyncDisplayRange();
     }
 
@@ -478,6 +501,7 @@ public sealed class ImGuiUI
         if (_showStatisticsWindow) RenderStatisticsWindow();
         if (_showPatternLibraryWindow) RenderPatternLibraryWindow();
         if (_showRandomSeedPopup) RenderRandomSeedPopup();
+        if (_showRecordingPopup) RenderRecordingPopup();
         if (_showCustomRulePopup) RenderCustomRulePopup();
         if (_showGradientPopup) RenderGradientPopup();
         if (_showCellColorPopup) RenderCellColorPopup();
@@ -581,6 +605,9 @@ public sealed class ImGuiUI
 
         if (ImGui.MenuItem("Screenshot", "F12"))
             OnScreenshotRequested?.Invoke();
+
+        if (ImGui.MenuItem(IsRecording ? "Recording..." : "Record Video..."))
+            _showRecordingPopup = true;
 
         ImGui.Separator();
 
@@ -687,6 +714,30 @@ public sealed class ImGuiUI
         if (!ImGui.BeginMenu("Simulation"))
             return;
 
+        int maxGen = Math.Max(0, _engine.GenerationCount - 1);
+        bool canStepBack = _displayEnd > 0;
+        bool canStepForward = _displayEnd < maxGen;
+
+        if (ImGui.MenuItem(_isPlaying ? "Pause" : "Play", "Space"))
+            TogglePlayPause();
+
+        if (ImGui.MenuItem("Previous Generation", "", false, canStepBack))
+            SeekDisplayEnd(_displayEnd - 1);
+
+        if (ImGui.MenuItem("Next Generation", "", false, canStepForward))
+            SeekDisplayEnd(_displayEnd + 1);
+
+        if (ImGui.MenuItem("First Generation", "", false, canStepBack))
+            SeekDisplayEnd(0);
+
+        if (ImGui.MenuItem("Last Generation", "", false, canStepForward))
+            SeekDisplayEnd(maxGen);
+
+        if (ImGui.MenuItem("Reset Simulation"))
+            OnReset();
+
+        ImGui.Separator();
+
         if (ImGui.BeginMenu("Grid Size"))
         {
             for (int i = 0; i < GridSizes.Length; i++)
@@ -711,7 +762,6 @@ public sealed class ImGuiUI
                 bool selected = i == _selectedRuleIdx;
                 if (ImGui.MenuItem(RuleNames[i], "", selected))
                 {
-                    _selectedRuleIdx = i;
                     string key = RuleKeys[i];
                     if (key == "custom")
                     {
@@ -719,6 +769,7 @@ public sealed class ImGuiUI
                     }
                     else
                     {
+                        _selectedRuleIdx = i;
                         _engine.SetRule(key);
                         RecomputeGenerations();
                     }
@@ -1223,6 +1274,56 @@ public sealed class ImGuiUI
         ImGui.End();
     }
 
+    private void RenderRecordingPopup()
+    {
+        ImGui.SetNextWindowSize(new Vector2(340, 0), ImGuiCond.Always);
+        if (!ImGui.Begin("Record Video", ref _showRecordingPopup,
+                ImGuiWindowFlags.NoResize | ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.End();
+            return;
+        }
+
+        float fullWidth = ImGui.GetContentRegionAvail().X;
+
+        int duration = RecordingDurationSeconds;
+        if (IsRecording)
+            ImGui.BeginDisabled();
+
+        ImGui.SetNextItemWidth(fullWidth);
+        if (ImGui.SliderInt("##rec-duration", ref duration, 1, 120, "Duration: %d s"))
+            RecordingDurationSeconds = Math.Clamp(duration, 1, 120);
+
+        string[] codecLabels = ["H.264 MP4", "VP9 WebM"];
+        int codecIdx = RecordingCodec == VideoCodec.H264Mp4 ? 0 : 1;
+        ImGui.SetNextItemWidth(fullWidth);
+        if (ImGui.Combo("##rec-codec", ref codecIdx, codecLabels, codecLabels.Length))
+            RecordingCodec = codecIdx == 0 ? VideoCodec.H264Mp4 : VideoCodec.Vp9Webm;
+
+        if (IsRecording)
+            ImGui.EndDisabled();
+
+        if (IsRecording)
+        {
+            float progress = (float)Math.Clamp(RecordingProgress01, 0.0, 1.0);
+            ImGui.ProgressBar(progress, new Vector2(fullWidth, 0),
+                $"{progress * RecordingDurationSeconds:F1} / {RecordingDurationSeconds} s");
+        }
+        else if (UIHelpers.AccentButton("Start Recording", new Vector2(fullWidth, 0)))
+        {
+            OnRecordingStartRequested?.Invoke();
+        }
+
+        if (!string.IsNullOrWhiteSpace(RecordingStatusMessage))
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.TextWrapped(RecordingStatusMessage);
+            ImGui.PopStyleColor();
+        }
+
+        ImGui.End();
+    }
+
     private void RenderRandomSeedPopup()
     {
         ImGui.SetNextWindowSize(new Vector2(280, 0), ImGuiCond.Always);
@@ -1271,6 +1372,7 @@ public sealed class ImGuiUI
             var survival = _customSurvival.Where(c => c >= '0' && c <= '8')
                 .Select(c => c - '0').Distinct().ToArray();
             _engine.SetCustomRule(birth, survival);
+            _selectedRuleIdx = Array.IndexOf(RuleKeys, "custom");
             RecomputeGenerations();
             _showCustomRulePopup = false;
         }
@@ -1599,6 +1701,7 @@ public sealed class ImGuiUI
         UIHelpers.LabelValue("  F12", "Screenshot");
         UIHelpers.LabelValue("  Ctrl+R", "Record Video");
         UIHelpers.LabelValue("  E", "Toggle Edit");
+        UIHelpers.LabelValue("  [/]", "Brush Size");
         UIHelpers.LabelValue("  Esc", "Exit Edit/Cinematic");
 
         ImGui.End();
@@ -1617,6 +1720,13 @@ public sealed class ImGuiUI
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextPrimary);
         ImGui.Text("Game of Life 3D");
         ImGui.PopStyleColor();
+
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        ImGui.Text($"Version {AppVersion}");
+        ImGui.Text("Created by Brian Tabone");
+        ImGui.PopStyleColor();
+
+        ImGui.Spacing();
 
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
         ImGui.TextWrapped("A 3D visualization of Conway's Game of Life and other cellular automata.");
@@ -1652,6 +1762,69 @@ public sealed class ImGuiUI
             parts[i] = char.ToUpperInvariant(parts[i][0]) + parts[i][1..];
         }
         return string.Join(' ', parts);
+    }
+
+    private static string LoadAppVersion()
+    {
+        foreach (string plistPath in GetVersionPlistCandidates())
+        {
+            string? version = ReadPlistString(plistPath, "CFBundleShortVersionString");
+            if (!string.IsNullOrWhiteSpace(version))
+                return version;
+        }
+
+        return "Unknown";
+    }
+
+    private static IEnumerable<string> GetVersionPlistCandidates()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string root in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
+        {
+            var directory = new DirectoryInfo(root);
+            for (int i = 0; i < 8 && directory != null; i++, directory = directory.Parent)
+            {
+                foreach (string candidate in new[]
+                {
+                    Path.Combine(directory.FullName, "Info.plist"),
+                    Path.Combine(directory.FullName, "signing", "macOS", "Info.plist"),
+                })
+                {
+                    string fullPath = Path.GetFullPath(candidate);
+                    if (seen.Add(fullPath))
+                        yield return fullPath;
+                }
+            }
+        }
+    }
+
+    private static string? ReadPlistString(string path, string key)
+    {
+        if (!File.Exists(path))
+            return null;
+
+        try
+        {
+            var elements = XDocument.Load(path).Root?.Element("dict")?.Elements().ToArray();
+            if (elements == null)
+                return null;
+
+            for (int i = 0; i < elements.Length - 1; i++)
+            {
+                if (elements[i].Name.LocalName == "key" &&
+                    elements[i].Value == key &&
+                    elements[i + 1].Name.LocalName == "string")
+                {
+                    return elements[i + 1].Value;
+                }
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static void DrawGradientPreview(IReadOnlyList<Vector3> stops, float width)
