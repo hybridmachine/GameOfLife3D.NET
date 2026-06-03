@@ -601,8 +601,8 @@ public sealed class App : IDisposable
 
         try
         {
-            int cellCount = _renderer!.GetVisibleCellCount();
-            long estimatedSize = ModelExporter.EstimateSTLSize(cellCount);
+            long estimatedSize = ModelExporter.EstimateSTLSize(_engine.Generations,
+                _ui.DisplayStart, _ui.DisplayEnd, _renderer!.Settings);
 
             if (estimatedSize > 100_000_000)
                 Console.WriteLine($"Warning: Export will be ~{estimatedSize / 1_000_000}MB");
@@ -610,7 +610,7 @@ public sealed class App : IDisposable
             if (format == "stl")
             {
                 ModelExporter.ExportBinarySTL(path, _engine.Generations,
-                    _ui.DisplayStart, _ui.DisplayEnd, _engine.GridSize, _renderer.Settings.CellPadding);
+                    _ui.DisplayStart, _ui.DisplayEnd, _engine.GridSize, _renderer.Settings);
             }
             else
             {
