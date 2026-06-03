@@ -112,12 +112,15 @@ public static class ModelExporter
 
         int vertexOffset = 0;
 
-        for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
-        {
-            if (generations[g].LiveCells.Count == 0)
-                continue;
+for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
+{
+    if (g < 0)
+        continue;
 
-            sw.WriteLine($"usemtl {materialSet.GetMaterialName(g)}");
+    if (generations[g].LiveCells.Count == 0)
+        continue;
+
+    sw.WriteLine($"usemtl {materialSet.GetMaterialName(g)}");
 
             foreach (var cell in generations[g].LiveCells)
             {
