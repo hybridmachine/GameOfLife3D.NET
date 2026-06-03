@@ -8,78 +8,54 @@ namespace GameOfLife3D.NET.IO;
 
 public static class ModelExporter
 {
-    private static readonly Vector3[] CubeVertices =
-    [
-        new(-0.5f, -0.5f, -0.5f), new( 0.5f, -0.5f, -0.5f), new( 0.5f,  0.5f, -0.5f), new(-0.5f,  0.5f, -0.5f), // Back
-        new(-0.5f, -0.5f,  0.5f), new( 0.5f, -0.5f,  0.5f), new( 0.5f,  0.5f,  0.5f), new(-0.5f,  0.5f,  0.5f), // Front
-    ];
-
-    private static readonly (int A, int B, int C, Vector3 Normal)[] CubeTriangles =
-    [
-        // Front face (Z+)
-        (4, 5, 6, new(0, 0, 1)), (4, 6, 7, new(0, 0, 1)),
-        // Back face (Z-)
-        (1, 0, 3, new(0, 0, -1)), (1, 3, 2, new(0, 0, -1)),
-        // Top face (Y+)
-        (3, 7, 6, new(0, 1, 0)), (3, 6, 2, new(0, 1, 0)),
-        // Bottom face (Y-)
-        (0, 1, 5, new(0, -1, 0)), (0, 5, 4, new(0, -1, 0)),
-        // Right face (X+)
-        (1, 2, 6, new(1, 0, 0)), (1, 6, 5, new(1, 0, 0)),
-        // Left face (X-)
-        (0, 4, 7, new(-1, 0, 0)), (0, 7, 3, new(-1, 0, 0)),
-    ];
-
     public static void ExportBinarySTL(string path, IReadOnlyList<Generation> generations,
-        int displayStart, int displayEnd, int gridSize, float cellPadding)
+        int displayStart, int displayEnd, int gridSize, RenderSettings settings)
     {
-        float cellSize = 1.0f - cellPadding;
+        CellMeshGeometry geometry = CellMeshGeometryFactory.GetGeometry(settings.Shape);
+        float cellSize = 1.0f - settings.CellPadding;
         float halfGrid = gridSize / 2f;
 
-        int totalCubes = 0;
-        for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
-            totalCubes += generations[g].LiveCells.Count;
-
-        int totalTriangles = totalCubes * 12;
+        long totalCells = CountVisibleCells(generations, displayStart, displayEnd);
+        long totalTriangles = checked(totalCells * geometry.TriangleCount);
+        if (totalTriangles > uint.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"STL export would contain {totalTriangles:N0} triangles, exceeding the binary STL limit of {uint.MaxValue:N0}.");
+        }
 
         using var fs = File.Create(path);
         using var bw = new BinaryWriter(fs);
 
-        // 80-byte header
         var header = new byte[80];
-        Encoding.ASCII.GetBytes("GameOfLife3D STL Export").CopyTo(header, 0);
+        Encoding.ASCII.GetBytes($"GameOfLife3D STL Export ({settings.Shape})").CopyTo(header, 0);
         bw.Write(header);
-
-        // Triangle count
         bw.Write((uint)totalTriangles);
 
-        // Write triangles
-        for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
+        if (!TryGetDisplayBounds(generations, displayStart, displayEnd, out int firstGeneration, out int lastGeneration))
+            return;
+
+        for (int g = firstGeneration; g <= lastGeneration; g++)
         {
             foreach (var cell in generations[g].LiveCells)
             {
                 var center = new Vector3(cell.X - halfGrid, g, cell.Y - halfGrid);
 
-                foreach (var tri in CubeTriangles)
+                for (int i = 0; i < geometry.Indices.Length; i += 3)
                 {
-                    // Normal
-                    bw.Write(tri.Normal.X);
-                    bw.Write(tri.Normal.Y);
-                    bw.Write(tri.Normal.Z);
+                    int ia = checked((int)geometry.Indices[i]);
+                    int ib = checked((int)geometry.Indices[i + 1]);
+                    int ic = checked((int)geometry.Indices[i + 2]);
 
-                    // Vertex A
-                    var va = CubeVertices[tri.A] * cellSize + center;
-                    bw.Write(va.X); bw.Write(va.Y); bw.Write(va.Z);
+                    Vector3 va = geometry.GetPosition(ia) * cellSize + center;
+                    Vector3 vb = geometry.GetPosition(ib) * cellSize + center;
+                    Vector3 vc = geometry.GetPosition(ic) * cellSize + center;
+                    Vector3 fallbackNormal = geometry.GetNormal(ia) + geometry.GetNormal(ib) + geometry.GetNormal(ic);
+                    Vector3 normal = CalculateFacetNormal(va, vb, vc, fallbackNormal);
 
-                    // Vertex B
-                    var vb = CubeVertices[tri.B] * cellSize + center;
-                    bw.Write(vb.X); bw.Write(vb.Y); bw.Write(vb.Z);
-
-                    // Vertex C
-                    var vc = CubeVertices[tri.C] * cellSize + center;
-                    bw.Write(vc.X); bw.Write(vc.Y); bw.Write(vc.Z);
-
-                    // Attribute byte count (unused)
+                    WriteVector(bw, normal);
+                    WriteVector(bw, va);
+                    WriteVector(bw, vb);
+                    WriteVector(bw, vc);
                     bw.Write((ushort)0);
                 }
             }
@@ -89,74 +65,117 @@ public static class ModelExporter
     public static void ExportOBJ(string path, IReadOnlyList<Generation> generations,
         int displayStart, int displayEnd, int gridSize, RenderSettings settings)
     {
+        CellMeshGeometry geometry = CellMeshGeometryFactory.GetGeometry(settings.Shape);
         float cellSize = 1.0f - settings.CellPadding;
         float halfGrid = gridSize / 2f;
         string mtlPath = Path.ChangeExtension(path, ".mtl");
         var materialSet = ObjMaterialSet.Create(generations, displayStart, displayEnd, settings);
+
+        _ = checked(CountVisibleCells(generations, displayStart, displayEnd) * geometry.VertexCount);
 
         WriteMtl(mtlPath, materialSet.Materials);
 
         using var sw = new StreamWriter(path);
         sw.WriteLine("# GameOfLife3D OBJ Export");
         sw.WriteLine($"# Generations {displayStart}-{displayEnd}");
+        sw.WriteLine($"# Cell shape {settings.Shape}");
         sw.WriteLine($"mtllib {Path.GetFileName(mtlPath)}");
 
-        // Write normals (shared for all cubes)
-        Vector3[] normals = [
-            new(0, 0, 1), new(0, 0, -1),
-            new(0, 1, 0), new(0, -1, 0),
-            new(1, 0, 0), new(-1, 0, 0),
-        ];
-        foreach (var n in normals)
-            sw.WriteLine(string.Format(CultureInfo.InvariantCulture, "vn {0:F4} {1:F4} {2:F4}", n.X, n.Y, n.Z));
+        for (int i = 0; i < geometry.VertexCount; i++)
+        {
+            Vector3 n = NormalizeOrZero(geometry.GetNormal(i));
+            sw.WriteLine(string.Format(CultureInfo.InvariantCulture,
+                "vn {0:F4} {1:F4} {2:F4}", n.X, n.Y, n.Z));
+        }
 
-        int vertexOffset = 0;
+        long vertexOffset = 0;
+        if (!TryGetDisplayBounds(generations, displayStart, displayEnd, out int firstGeneration, out int lastGeneration))
+            return;
 
-for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
-{
-    if (g < 0)
-        continue;
+        for (int g = firstGeneration; g <= lastGeneration; g++)
+        {
+            if (generations[g].LiveCells.Count == 0)
+                continue;
 
-    if (generations[g].LiveCells.Count == 0)
-        continue;
-
-    sw.WriteLine($"usemtl {materialSet.GetMaterialName(g)}");
+            sw.WriteLine($"usemtl {materialSet.GetMaterialName(g)}");
 
             foreach (var cell in generations[g].LiveCells)
             {
                 var center = new Vector3(cell.X - halfGrid, g, cell.Y - halfGrid);
 
-                // 8 vertices per cube
-                foreach (var baseVert in CubeVertices)
+                for (int i = 0; i < geometry.VertexCount; i++)
                 {
-                    var v = baseVert * cellSize + center;
-                    sw.WriteLine(string.Format(CultureInfo.InvariantCulture, "v {0:F4} {1:F4} {2:F4}", v.X, v.Y, v.Z));
+                    Vector3 v = geometry.GetPosition(i) * cellSize + center;
+                    sw.WriteLine(string.Format(CultureInfo.InvariantCulture,
+                        "v {0:F4} {1:F4} {2:F4}", v.X, v.Y, v.Z));
                 }
 
-                // 12 triangles per cube
-                int b = vertexOffset + 1; // OBJ is 1-indexed
-                // Front (Z+) - normal 1
-                sw.WriteLine($"f {b + 4}//{1} {b + 5}//{1} {b + 6}//{1}");
-                sw.WriteLine($"f {b + 4}//{1} {b + 6}//{1} {b + 7}//{1}");
-                // Back (Z-) - normal 2
-                sw.WriteLine($"f {b + 1}//{2} {b + 0}//{2} {b + 3}//{2}");
-                sw.WriteLine($"f {b + 1}//{2} {b + 3}//{2} {b + 2}//{2}");
-                // Top (Y+) - normal 3
-                sw.WriteLine($"f {b + 3}//{3} {b + 7}//{3} {b + 6}//{3}");
-                sw.WriteLine($"f {b + 3}//{3} {b + 6}//{3} {b + 2}//{3}");
-                // Bottom (Y-) - normal 4
-                sw.WriteLine($"f {b + 0}//{4} {b + 1}//{4} {b + 5}//{4}");
-                sw.WriteLine($"f {b + 0}//{4} {b + 5}//{4} {b + 4}//{4}");
-                // Right (X+) - normal 5
-                sw.WriteLine($"f {b + 1}//{5} {b + 2}//{5} {b + 6}//{5}");
-                sw.WriteLine($"f {b + 1}//{5} {b + 6}//{5} {b + 5}//{5}");
-                // Left (X-) - normal 6
-                sw.WriteLine($"f {b + 0}//{6} {b + 4}//{6} {b + 7}//{6}");
-                sw.WriteLine($"f {b + 0}//{6} {b + 7}//{6} {b + 3}//{6}");
+                for (int i = 0; i < geometry.Indices.Length; i += 3)
+                {
+                    long a = geometry.Indices[i];
+                    long b = geometry.Indices[i + 1];
+                    long c = geometry.Indices[i + 2];
+                    long va = vertexOffset + a + 1;
+                    long vb = vertexOffset + b + 1;
+                    long vc = vertexOffset + c + 1;
+                    long na = a + 1;
+                    long nb = b + 1;
+                    long nc = c + 1;
 
-                vertexOffset += 8;
+                    sw.WriteLine($"f {va}//{na} {vb}//{nb} {vc}//{nc}");
+                }
+
+                vertexOffset = checked(vertexOffset + geometry.VertexCount);
             }
         }
+    }
+
+    private static bool TryGetDisplayBounds(IReadOnlyList<Generation> generations,
+        int displayStart, int displayEnd, out int firstGeneration, out int lastGeneration)
+    {
+        firstGeneration = Math.Max(displayStart, 0);
+        lastGeneration = Math.Min(displayEnd, generations.Count - 1);
+        return firstGeneration <= lastGeneration;
+    }
+
+    private static long CountVisibleCells(IReadOnlyList<Generation> generations, int displayStart, int displayEnd)
+    {
+        if (!TryGetDisplayBounds(generations, displayStart, displayEnd, out int firstGeneration, out int lastGeneration))
+            return 0;
+
+        long total = 0;
+        for (int g = firstGeneration; g <= lastGeneration; g++)
+            total = checked(total + generations[g].LiveCells.Count);
+
+        return total;
+    }
+
+    private static Vector3 CalculateFacetNormal(Vector3 a, Vector3 b, Vector3 c, Vector3 fallbackNormal)
+    {
+        Vector3 normal = Vector3.Cross(b - a, c - a);
+        float lengthSquared = normal.LengthSquared();
+        Vector3 fallback = NormalizeOrZero(fallbackNormal);
+        if (lengthSquared <= 1e-12f)
+            return fallback;
+
+        normal /= MathF.Sqrt(lengthSquared);
+        if (fallback != Vector3.Zero && Vector3.Dot(normal, fallback) < 0f)
+            normal = -normal;
+
+        return normal;
+    }
+
+    private static Vector3 NormalizeOrZero(Vector3 value)
+    {
+        float lengthSquared = value.LengthSquared();
+        return lengthSquared <= 1e-12f ? Vector3.Zero : value / MathF.Sqrt(lengthSquared);
+    }
+
+    private static void WriteVector(BinaryWriter bw, Vector3 value)
+    {
+        bw.Write(value.X);
+        bw.Write(value.Y);
+        bw.Write(value.Z);
     }
 
     private static void WriteMtl(string path, IReadOnlyList<ObjMaterial> materials)
@@ -207,9 +226,12 @@ for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
             var materials = new List<ObjMaterial>();
             var byGeneration = new Dictionary<int, string>();
 
-            for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
+            if (!TryGetDisplayBounds(generations, displayStart, displayEnd, out int firstGeneration, out int lastGeneration))
+                return new ObjMaterialSet(materials, usesGradient: true, byGeneration);
+
+            for (int g = firstGeneration; g <= lastGeneration; g++)
             {
-                if (g < 0 || generations[g].LiveCells.Count == 0)
+                if (generations[g].LiveCells.Count == 0)
                     continue;
 
                 string name = FormatGenerationMaterialName(g);
@@ -248,10 +270,6 @@ for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
     private static Vector3 ComputeGradientColor(int generation, int displayStart, int displayEnd, IReadOnlyList<Vector3> stops)
     {
         float range = Math.Max(displayEnd - displayStart + 1, 1);
-
-        // OBJ materials are one static color per generation. Sample across the
-        // inclusive displayed range so the final generation does not duplicate
-        // the first color at the gradient's cyclic wrap point.
         float adjustedY = PositiveModulo(generation - displayStart, range);
         float t = adjustedY / range;
 
@@ -287,9 +305,14 @@ for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
         Math.Clamp(value.Y, 0f, 1f),
         Math.Clamp(value.Z, 0f, 1f));
 
-    public static long EstimateSTLSize(int cellCount)
+    public static long EstimateSTLSize(long cellCount, RenderSettings settings)
     {
-        // 80 header + 4 count + 50 bytes per triangle * 12 triangles per cube
-        return 84 + (long)cellCount * 12 * 50;
+        CellMeshGeometry geometry = CellMeshGeometryFactory.GetGeometry(settings.Shape);
+        long totalTriangles = checked(cellCount * geometry.TriangleCount);
+        return checked(84 + totalTriangles * 50);
     }
+
+    public static long EstimateSTLSize(IReadOnlyList<Generation> generations,
+        int displayStart, int displayEnd, RenderSettings settings) =>
+        EstimateSTLSize(CountVisibleCells(generations, displayStart, displayEnd), settings);
 }

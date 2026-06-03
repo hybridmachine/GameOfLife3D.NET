@@ -23,12 +23,6 @@ public sealed class InstancedCellRenderer : IDisposable
     // Pre-allocated buffer
     private InstanceData[] _instanceBuffer = [];
 
-    // Performance guard: when the chosen shape is BeveledCube and the live
-    // instance count exceeds this threshold, fall back to the plain cube mesh.
-    // Other shapes (added by later tasks) have no fallback — they always
-    // render as themselves.
-    private const int BeveledMaxInstances = 500_000;
-
     public int InstanceCount => _instanceCount;
 
     /// <summary>
@@ -118,11 +112,7 @@ public sealed class InstancedCellRenderer : IDisposable
 
     private void GetActiveMesh(RenderSettings settings, out uint vao, out uint indexCount)
     {
-        CellShape effective = settings.Shape;
-        // Beveled cube falls back to plain cube above the LOD threshold —
-        // preserves the original BeveledMaxInstances behavior.
-        if (effective == CellShape.BeveledCube && _instanceCount > BeveledMaxInstances)
-            effective = CellShape.Cube;
+        CellShape effective = CellMeshGeometryFactory.ResolveRenderShape(settings.Shape, _instanceCount);
 
         IInstancedMesh mesh = _meshes.TryGetValue(effective, out var m)
             ? m

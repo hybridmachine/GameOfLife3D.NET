@@ -117,4 +117,8 @@ public static class MeshBuilder
 
         gl.BindVertexArray(0);
     }
+
+    public static void UploadAndBind(CellMeshGeometry geometry,
+        out uint vao, out uint vbo, out uint ebo, GL gl) =>
+        UploadAndBind(geometry.Vertices, geometry.Indices, out vao, out vbo, out ebo, gl);
 }
