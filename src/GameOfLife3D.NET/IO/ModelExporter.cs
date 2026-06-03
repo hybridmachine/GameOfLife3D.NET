@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text;
 using GameOfLife3D.NET.Engine;
+using GameOfLife3D.NET.Rendering;
 
 namespace GameOfLife3D.NET.IO;
 
@@ -86,14 +87,19 @@ public static class ModelExporter
     }
 
     public static void ExportOBJ(string path, IReadOnlyList<Generation> generations,
-        int displayStart, int displayEnd, int gridSize, float cellPadding)
+        int displayStart, int displayEnd, int gridSize, RenderSettings settings)
     {
-        float cellSize = 1.0f - cellPadding;
+        float cellSize = 1.0f - settings.CellPadding;
         float halfGrid = gridSize / 2f;
+        string mtlPath = Path.ChangeExtension(path, ".mtl");
+        var materialSet = ObjMaterialSet.Create(generations, displayStart, displayEnd, settings);
+
+        WriteMtl(mtlPath, materialSet.Materials);
 
         using var sw = new StreamWriter(path);
         sw.WriteLine("# GameOfLife3D OBJ Export");
         sw.WriteLine($"# Generations {displayStart}-{displayEnd}");
+        sw.WriteLine($"mtllib {Path.GetFileName(mtlPath)}");
 
         // Write normals (shared for all cubes)
         Vector3[] normals = [
@@ -108,6 +114,11 @@ public static class ModelExporter
 
         for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
         {
+            if (generations[g].LiveCells.Count == 0)
+                continue;
+
+            sw.WriteLine($"usemtl {materialSet.GetMaterialName(g)}");
+
             foreach (var cell in generations[g].LiveCells)
             {
                 var center = new Vector3(cell.X - halfGrid, g, cell.Y - halfGrid);
@@ -144,6 +155,134 @@ public static class ModelExporter
             }
         }
     }
+
+    private static void WriteMtl(string path, IReadOnlyList<ObjMaterial> materials)
+    {
+        using var sw = new StreamWriter(path);
+        sw.WriteLine("# GameOfLife3D OBJ Material Export");
+
+        foreach (var material in materials)
+        {
+            Vector3 color = Clamp01(material.Color);
+            sw.WriteLine();
+            sw.WriteLine($"newmtl {material.Name}");
+            sw.WriteLine("Ka 0.0000 0.0000 0.0000");
+            sw.WriteLine(string.Format(CultureInfo.InvariantCulture, "Kd {0:F4} {1:F4} {2:F4}", color.X, color.Y, color.Z));
+            sw.WriteLine("Ks 0.0000 0.0000 0.0000");
+            sw.WriteLine("d 1.0000");
+            sw.WriteLine("illum 1");
+        }
+    }
+
+    private sealed class ObjMaterialSet
+    {
+        private const string SolidMaterialName = "cell_color";
+
+        private readonly bool _usesGradient;
+        private readonly Dictionary<int, string> _generationMaterials;
+
+        private ObjMaterialSet(IReadOnlyList<ObjMaterial> materials, bool usesGradient, Dictionary<int, string> generationMaterials)
+        {
+            Materials = materials;
+            _usesGradient = usesGradient;
+            _generationMaterials = generationMaterials;
+        }
+
+        public IReadOnlyList<ObjMaterial> Materials { get; }
+
+        public static ObjMaterialSet Create(IReadOnlyList<Generation> generations, int displayStart, int displayEnd, RenderSettings settings)
+        {
+            if (!settings.FaceColorCycling)
+            {
+                return new ObjMaterialSet(
+                    [new ObjMaterial(SolidMaterialName, settings.CellColor)],
+                    usesGradient: false,
+                    new Dictionary<int, string>());
+            }
+
+            IReadOnlyList<Vector3> stops = GetValidGradientStops(settings);
+            var materials = new List<ObjMaterial>();
+            var byGeneration = new Dictionary<int, string>();
+
+            for (int g = displayStart; g <= displayEnd && g < generations.Count; g++)
+            {
+                if (g < 0 || generations[g].LiveCells.Count == 0)
+                    continue;
+
+                string name = FormatGenerationMaterialName(g);
+                byGeneration[g] = name;
+                materials.Add(new ObjMaterial(name, ComputeGradientColor(g, displayStart, displayEnd, stops)));
+            }
+
+            return new ObjMaterialSet(materials, usesGradient: true, byGeneration);
+        }
+
+        public string GetMaterialName(int generation)
+        {
+            if (!_usesGradient)
+                return SolidMaterialName;
+
+            return _generationMaterials.TryGetValue(generation, out string? name)
+                ? name
+                : FormatGenerationMaterialName(generation);
+        }
+    }
+
+    private sealed record ObjMaterial(string Name, Vector3 Color);
+
+    private static IReadOnlyList<Vector3> GetValidGradientStops(RenderSettings settings)
+    {
+        IReadOnlyList<Vector3> stops = settings.GradientStops;
+        if (stops.Count < RenderSettings.MinGradientStops)
+            return RenderSettings.DefaultGradientStops;
+
+        if (stops.Count <= RenderSettings.MaxGradientStops)
+            return stops;
+
+        return stops.Take(RenderSettings.MaxGradientStops).ToArray();
+    }
+
+    private static Vector3 ComputeGradientColor(int generation, int displayStart, int displayEnd, IReadOnlyList<Vector3> stops)
+    {
+        float range = Math.Max(displayEnd - displayStart + 1, 1);
+
+        // OBJ materials are one static color per generation. Sample across the
+        // inclusive displayed range so the final generation does not duplicate
+        // the first color at the gradient's cyclic wrap point.
+        float adjustedY = PositiveModulo(generation - displayStart, range);
+        float t = adjustedY / range;
+
+        int n = Math.Clamp(stops.Count, RenderSettings.MinGradientStops, RenderSettings.MaxGradientStops);
+        float scaled = t * n;
+        int seg = (int)MathF.Floor(scaled);
+        float k = scaled - seg;
+
+        int idxA = PositiveModulo(seg, n);
+        int idxB = PositiveModulo(seg + 1, n);
+        return Vector3.Lerp(stops[idxA], stops[idxB], k);
+    }
+
+    private static string FormatGenerationMaterialName(int generation) =>
+        generation >= 0
+            ? string.Format(CultureInfo.InvariantCulture, "gen_{0:D4}", generation)
+            : string.Format(CultureInfo.InvariantCulture, "gen_m{0:D4}", Math.Abs(generation));
+
+    private static float PositiveModulo(float value, float modulo)
+    {
+        float result = value % modulo;
+        return result < 0 ? result + modulo : result;
+    }
+
+    private static int PositiveModulo(int value, int modulo)
+    {
+        int result = value % modulo;
+        return result < 0 ? result + modulo : result;
+    }
+
+    private static Vector3 Clamp01(Vector3 value) => new(
+        Math.Clamp(value.X, 0f, 1f),
+        Math.Clamp(value.Y, 0f, 1f),
+        Math.Clamp(value.Z, 0f, 1f));
 
     public static long EstimateSTLSize(int cellCount)
     {

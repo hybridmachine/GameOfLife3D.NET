@@ -615,7 +615,7 @@ public sealed class App : IDisposable
             else
             {
                 ModelExporter.ExportOBJ(path, _engine.Generations,
-                    _ui.DisplayStart, _ui.DisplayEnd, _engine.GridSize, _renderer.Settings.CellPadding);
+                    _ui.DisplayStart, _ui.DisplayEnd, _engine.GridSize, _renderer.Settings);
             }
 
             Console.WriteLine($"Exported to: {path}");
