@@ -9,7 +9,6 @@ public sealed class Renderer3D : IDisposable
     // Above this instance count we skip the reflection pass and render the
     // floor as flat tinted water. Matches InstancedCellRenderer's beveled-cube
     // cutoff so the visual fidelity drop happens at one consistent threshold.
-    private const int ReflectionMaxInstances = 500_000;
 
     private readonly GL _gl;
     private ShaderProgram? _cubeShader;
@@ -183,7 +182,7 @@ public sealed class Renderer3D : IDisposable
         bool wantsReflection = _settings.FloorMode == FloorMode.Reflective
                             && _floorRenderer is { IsInitialized: true }
                             && _floorShader != null
-                            && _currentInstanceCount <= ReflectionMaxInstances;
+                            && _currentInstanceCount <= CellMeshGeometryFactory.BeveledCubeRenderFallbackThreshold;
 
         if (wantsReflection)
         {
