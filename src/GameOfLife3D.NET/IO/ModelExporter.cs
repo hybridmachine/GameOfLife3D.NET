@@ -71,8 +71,6 @@ public static class ModelExporter
         string mtlPath = Path.ChangeExtension(path, ".mtl");
         var materialSet = ObjMaterialSet.Create(generations, displayStart, displayEnd, settings);
 
-        _ = checked(CountVisibleCells(generations, displayStart, displayEnd) * geometry.VertexCount);
-
         WriteMtl(mtlPath, materialSet.Materials);
 
         using var sw = new StreamWriter(path);
