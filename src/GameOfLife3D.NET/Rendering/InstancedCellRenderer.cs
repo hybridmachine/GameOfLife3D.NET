@@ -150,6 +150,7 @@ public sealed class InstancedCellRenderer : IDisposable
         // Generation fade-in
         shader.SetUniform("uFadeGeneration", settings.FadeGeneration);
         shader.SetUniform("uFadeOpacity", settings.FadeOpacity);
+        shader.SetUniform("uGlobalAlpha", settings.GlobalAlpha);
 
         GetActiveMesh(settings, out uint vao, out uint indexCount);
         _gl.BindVertexArray(vao);
@@ -189,6 +190,7 @@ public sealed class InstancedCellRenderer : IDisposable
         // Generation fade-in
         shader.SetUniform("uFadeGeneration", settings.FadeGeneration);
         shader.SetUniform("uFadeOpacity", settings.FadeOpacity);
+        shader.SetUniform("uGlobalAlpha", settings.GlobalAlpha);
 
         _gl.Enable(EnableCap.PolygonOffsetLine);
         _gl.PolygonOffset(-1f, -1f);

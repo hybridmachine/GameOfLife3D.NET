@@ -25,6 +25,9 @@ uniform float uClipY;
 uniform float uFadeGeneration;
 uniform float uFadeOpacity;
 
+// Global alpha (cinematic falling-cells fade-out)
+uniform float uGlobalAlpha;
+
 out vec4 FragColor;
 
 #include "gradient.glsl"
@@ -104,5 +107,5 @@ void main()
         alpha = mix(alpha, 0.0, fogFactor);
     }
 
-    FragColor = vec4(color, alpha);
+    FragColor = vec4(color, alpha * uGlobalAlpha);
 }

@@ -14,6 +14,8 @@ public sealed class CinematicController
     private const int PrecomputeCount = 50;
     private const int MaxRetries = 5;
     private const double CycleDurationSeconds = PrecomputeCount * RevealIntervalSeconds;
+    private const double TransitionDurationSeconds = 20.0;
+    private const double FadeOutDuration = 2.0;
     private static readonly string[] CuratedPatternIds =
     [
         "r-pentomino",
@@ -47,6 +49,15 @@ public sealed class CinematicController
     private CellShape? _savedShape;
     private int _lastShapeIndex = -1;
 
+    // Falling-cells transition state
+    private enum CinematicPhase { Revealing, Falling }
+    private CinematicPhase _phase = CinematicPhase.Revealing;
+    private double _fallStartTime;
+    private double _lastUpdateTime;
+    private readonly FallingCellsPhysics _physics = new();
+    private Vector3[] _fallingPositions = [];
+    private float[] _fallingGenT = [];
+
     public bool IsActive => _isActive;
 
     public CinematicController(
@@ -70,6 +81,7 @@ public sealed class CinematicController
         if (_isActive) return;
 
         _isActive = true;
+        _phase = CinematicPhase.Revealing;
         _playlistIndex = 0;
         _savedGradientStops = new List<Vector3>(_renderer.Settings.GradientStops);
         _lastPaletteIndex = ResolveCurrentPaletteIndex(_renderer.Settings.GradientStops);
@@ -85,6 +97,12 @@ public sealed class CinematicController
 
         _isActive = false;
         _camera.StopFlythrough();
+
+        // Clean up falling-cells transition state
+        _physics.Clear();
+        _phase = CinematicPhase.Revealing;
+        _renderer.SetFallingActive(false);
+        _renderer.Settings.GlobalAlpha = 1f;
 
         // Clear fade effect
         _renderer.Settings.FadeGeneration = -1f;
@@ -112,10 +130,16 @@ public sealed class CinematicController
     {
         if (!_isActive) return;
 
+        if (_phase == CinematicPhase.Falling)
+        {
+            UpdateFalling(currentTime);
+            return;
+        }
+
         // Check if it's time for a new cycle
         if (currentTime - _cycleStartTime >= CycleDurationSeconds)
         {
-            StartNewCycle(currentTime);
+            BeginFallingPhase(currentTime);
             return;
         }
 
@@ -135,6 +159,86 @@ public sealed class CinematicController
         float fadeProgress = (float)Math.Clamp(timeSinceReveal / RevealIntervalSeconds, 0.0, 1.0);
         _renderer.Settings.FadeGeneration = _revealedEnd;
         _renderer.Settings.FadeOpacity = fadeProgress;
+    }
+
+    private void BeginFallingPhase(double currentTime)
+    {
+        _phase = CinematicPhase.Falling;
+        _fallStartTime = currentTime;
+        _lastUpdateTime = currentTime;
+
+        SnapshotVisibleCells();
+        _renderer.SetFallingActive(true);
+
+        // Disable per-generation fade; use GlobalAlpha for the fade-out instead.
+        _renderer.Settings.FadeGeneration = -1f;
+        _renderer.Settings.FadeOpacity = 1f;
+        _renderer.Settings.GlobalAlpha = 1f;
+    }
+
+    private void UpdateFalling(double currentTime)
+    {
+        float delta = (float)Math.Clamp(currentTime - _lastUpdateTime, 0.0, 0.1);
+        _lastUpdateTime = currentTime;
+
+        _physics.Step(delta);
+
+        var buffer = _renderer.GetInstanceBuffer();
+        int count = _physics.WriteInstanceData(buffer, _renderer.MaxInstances);
+        _renderer.SetFallingCells(count);
+
+        double elapsed = currentTime - _fallStartTime;
+
+        // Fade out in the final FadeOutDuration seconds.
+        if (elapsed >= TransitionDurationSeconds - FadeOutDuration)
+        {
+            float fadeRemaining = (float)(TransitionDurationSeconds - elapsed);
+            _renderer.Settings.GlobalAlpha = Math.Clamp(fadeRemaining / (float)FadeOutDuration, 0f, 1f);
+        }
+
+        if (elapsed >= TransitionDurationSeconds)
+        {
+            EndFallingPhase(currentTime);
+        }
+    }
+
+    private void EndFallingPhase(double currentTime)
+    {
+        _physics.Clear();
+        _renderer.SetFallingActive(false);
+        _renderer.Settings.GlobalAlpha = 1f;
+        _renderer.Settings.FadeGeneration = -1f;
+        _renderer.Settings.FadeOpacity = 1f;
+        _phase = CinematicPhase.Revealing;
+        StartNewCycle(currentTime);
+    }
+
+    private void SnapshotVisibleCells()
+    {
+        float halfSize = _engine.GridSize / 2f;
+        int maxCells = FallingCellsPhysics.MaxCells;
+
+        if (_fallingPositions.Length < maxCells)
+        {
+            _fallingPositions = new Vector3[maxCells];
+            _fallingGenT = new float[maxCells];
+        }
+
+        int count = 0;
+        for (int g = 0; g <= _revealedEnd && g < _engine.GenerationCount; g++)
+        {
+            var gen = _engine.Generations[g];
+            foreach (var cell in gen.LiveCells)
+            {
+                if (count >= maxCells) break;
+                _fallingPositions[count] = new Vector3(cell.X - halfSize, g, cell.Y - halfSize);
+                _fallingGenT[count] = g;
+                count++;
+            }
+            if (count >= maxCells) break;
+        }
+
+        _physics.Initialize(_fallingPositions.AsSpan(0, count), _fallingGenT.AsSpan(0, count));
     }
 
     private void StartNewCycle(double currentTime)
@@ -217,6 +321,7 @@ public sealed class CinematicController
         // Start with generation 0 fading in.
         _renderer.Settings.FadeGeneration = 0f;
         _renderer.Settings.FadeOpacity = 0f;
+        _renderer.Settings.GlobalAlpha = 1f;
 
         var path = FlythroughPathGenerator.Generate(
             _engine.Generations,
