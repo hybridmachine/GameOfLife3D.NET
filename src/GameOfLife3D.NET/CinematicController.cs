@@ -14,8 +14,6 @@ public sealed class CinematicController
     private const int PrecomputeCount = 50;
     private const int MaxRetries = 5;
     private const double CycleDurationSeconds = PrecomputeCount * RevealIntervalSeconds;
-    private const double TransitionDurationSeconds = 20.0;
-    private const double FadeOutDuration = 2.0;
     private static readonly string[] CuratedPatternIds =
     [
         "r-pentomino",
@@ -52,7 +50,6 @@ public sealed class CinematicController
     // Falling-cells transition state
     private enum CinematicPhase { Revealing, Falling }
     private CinematicPhase _phase = CinematicPhase.Revealing;
-    private double _fallStartTime;
     private double _lastUpdateTime;
     private readonly FallingCellsPhysics _physics = new();
     private Vector3[] _fallingPositions = [];
@@ -164,7 +161,6 @@ public sealed class CinematicController
     private void BeginFallingPhase(double currentTime)
     {
         _phase = CinematicPhase.Falling;
-        _fallStartTime = currentTime;
         _lastUpdateTime = currentTime;
 
         SnapshotVisibleCells();
@@ -187,16 +183,7 @@ public sealed class CinematicController
         int count = _physics.WriteInstanceData(buffer, _renderer.MaxInstances);
         _renderer.SetFallingCells(count);
 
-        double elapsed = currentTime - _fallStartTime;
-
-        // Fade out in the final FadeOutDuration seconds.
-        if (elapsed >= TransitionDurationSeconds - FadeOutDuration)
-        {
-            float fadeRemaining = (float)(TransitionDurationSeconds - elapsed);
-            _renderer.Settings.GlobalAlpha = Math.Clamp(fadeRemaining / (float)FadeOutDuration, 0f, 1f);
-        }
-
-        if (elapsed >= TransitionDurationSeconds)
+        if (_physics.ActiveCount == 0)
         {
             EndFallingPhase(currentTime);
         }

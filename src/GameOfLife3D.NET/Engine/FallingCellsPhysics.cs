@@ -37,7 +37,9 @@ public sealed class FallingCellsPhysics
     private Vector3[] _positions = [];
     private Vector3[] _velocities = [];
     private float[] _generationT = [];
+    private bool[] _alive = [];
     private int _count;
+    private int _activeCount;
     private float _accumulator;
 
     // Reusable spatial hash — cleared & repopulated every solver iteration.
@@ -45,6 +47,7 @@ public sealed class FallingCellsPhysics
     private readonly Stack<List<int>> _listPool = new();
 
     public int Count => _count;
+    public int ActiveCount => _activeCount;
 
     public void Initialize(ReadOnlySpan<Vector3> positions, ReadOnlySpan<float> generationT)
     {
@@ -57,15 +60,18 @@ public sealed class FallingCellsPhysics
             _positions = new Vector3[cap];
             _velocities = new Vector3[cap];
             _generationT = new float[cap];
+            _alive = new bool[cap];
         }
 
         _count = count;
+        _activeCount = count;
         _accumulator = 0f;
 
         for (int i = 0; i < count; i++)
         {
             _positions[i] = positions[i];
             _generationT[i] = generationT[i];
+            _alive[i] = true;
 
             // Small random horizontal velocity breaks perfect symmetry so
             // vertically-aligned cells don't jitter on each other forever.
@@ -103,6 +109,7 @@ public sealed class FallingCellsPhysics
         float drag = 1.0f - AirDrag * dt;
         for (int i = 0; i < _count; i++)
         {
+            if (!_alive[i]) continue;
             _velocities[i].Y += Gravity * dt;
             _velocities[i] *= drag;
             _positions[i] += _velocities[i] * dt;
@@ -113,13 +120,11 @@ public sealed class FallingCellsPhysics
     {
         for (int i = 0; i < _count; i++)
         {
+            if (!_alive[i]) continue;
             if (_positions[i].Y < RestY)
             {
-                _positions[i].Y = RestY;
-                if (_velocities[i].Y < 0)
-                    _velocities[i].Y = -_velocities[i].Y * Restitution;
-                _velocities[i].X *= Friction;
-                _velocities[i].Z *= Friction;
+                _alive[i] = false;
+                _activeCount--;
             }
         }
     }
@@ -130,6 +135,7 @@ public sealed class FallingCellsPhysics
 
         for (int i = 0; i < _count; i++)
         {
+            if (!_alive[i]) continue;
             ref var pi = ref _positions[i];
             int cx = (int)MathF.Floor(pi.X / HashCellSize);
             int cy = (int)MathF.Floor(pi.Y / HashCellSize);
@@ -215,6 +221,7 @@ public sealed class FallingCellsPhysics
 
         for (int i = 0; i < _count; i++)
         {
+            if (!_alive[i]) continue;
             ref var p = ref _positions[i];
             int cx = (int)MathF.Floor(p.X / HashCellSize);
             int cy = (int)MathF.Floor(p.Y / HashCellSize);
@@ -247,21 +254,24 @@ public sealed class FallingCellsPhysics
     /// </summary>
     public int WriteInstanceData(InstanceData[] buffer, int maxCount)
     {
-        int count = Math.Min(_count, maxCount);
-        for (int i = 0; i < count; i++)
+        int written = 0;
+        for (int i = 0; i < _count && written < maxCount; i++)
         {
-            buffer[i] = new InstanceData
+            if (!_alive[i]) continue;
+            buffer[written] = new InstanceData
             {
                 Position = _positions[i],
                 GenerationT = _generationT[i],
             };
+            written++;
         }
-        return count;
+        return written;
     }
 
     public void Clear()
     {
         _count = 0;
+        _activeCount = 0;
         _accumulator = 0f;
         _hash.Clear();
     }
