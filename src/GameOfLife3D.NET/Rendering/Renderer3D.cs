@@ -36,6 +36,10 @@ public sealed class Renderer3D : IDisposable
     // Preview cells for edit mode
     private int _previewCount;
 
+    // When true, UpdateGenerations is skipped so the falling-cells buffer
+    // written by CinematicController isn't overwritten mid-transition.
+    private bool _fallingActive;
+
     public RenderSettings Settings => _settings;
     public PostProcessPipeline? PostProcess => _postProcess;
     public ShapeThumbnailRenderer? ShapeThumbnails => _shapeThumbnails;
@@ -121,9 +125,47 @@ public sealed class Renderer3D : IDisposable
         _previewCount = 0;
     }
 
+    /// <summary>
+    /// Exposes the raw instance buffer so an external system (the cinematic
+    /// falling-cells controller) can write positions directly without an
+    /// intermediate copy.
+    /// </summary>
+    public InstanceData[] GetInstanceBuffer() =>
+        _instancedRenderer?.GetInstanceBuffer() ?? [];
+
+    /// <summary>Maximum number of instances the GPU buffer can hold.</summary>
+    public int MaxInstances => _instancedRenderer?.MaxInstances ?? 0;
+
+    /// <summary>
+    /// Commits the current contents of the instance buffer for rendering,
+    /// using the supplied instance count. Used by the falling-cells
+    /// transition after <see cref="FallingCellsPhysics"/> has written
+    /// positions into the buffer obtained via <see cref="GetInstanceBuffer"/>.
+    /// </summary>
+    public void SetFallingCells(int count)
+    {
+        if (_instancedRenderer == null) return;
+        _currentInstanceCount = Math.Min(count, _instancedRenderer.MaxInstances);
+        _instancedRenderer.SetInstanceCount(_currentInstanceCount);
+        _previewCount = 0;
+    }
+
+    /// <summary>
+    /// Toggles the falling-cells transition guard. When active,
+    /// <see cref="UpdateGenerations"/> is skipped so the physics-driven
+    /// instance buffer isn't overwritten. Disabling also calls
+    /// <see cref="InvalidateState"/> so the next UpdateGenerations rebuilds.
+    /// </summary>
+    public void SetFallingActive(bool active)
+    {
+        _fallingActive = active;
+        if (!active) InvalidateState();
+    }
+
     public void UpdateGenerations(IReadOnlyList<Generation> generations, int displayStart, int displayEnd)
     {
         if (_instancedRenderer == null) return;
+        if (_fallingActive) return;
 
         bool stateChanged = displayStart != _lastDisplayStart ||
                            displayEnd != _lastDisplayEnd ||

@@ -81,6 +81,11 @@ public sealed class RenderSettings
     public float FadeGeneration { get; set; } = -1f;
     public float FadeOpacity { get; set; } = 1f;
 
+    // Global alpha multiplier applied to all non-preview cells. Used by the
+    // cinematic falling-cells transition to fade the pile out before the next
+    // pattern loads. 1.0 = fully opaque (normal rendering).
+    public float GlobalAlpha { get; set; } = 1f;
+
     // Reflective floor / water — only used when FloorMode == Reflective.
     // WaveStrength=0 gives a perfect mirror; defaults are tuned for a calm,
     // slightly rippled surface that doesn't fight the cubes for attention.
