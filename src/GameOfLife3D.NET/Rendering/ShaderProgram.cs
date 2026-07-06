@@ -10,6 +10,15 @@ public sealed class ShaderProgram : IDisposable
     private readonly uint _handle;
     private readonly Dictionary<string, int> _uniformLocations = new();
 
+    // Last value written per uniform location. Uniform values are per-program
+    // GL state, so skipping redundant glUniform* calls is safe as long as all
+    // writes go through SetUniform. Matrices are exempt: they change nearly
+    // every frame and comparing 16 floats buys nothing.
+    private readonly Dictionary<int, int> _intCache = new();
+    private readonly Dictionary<int, float> _floatCache = new();
+    private readonly Dictionary<int, Vector3> _vec3Cache = new();
+    private readonly Dictionary<int, Vector4> _vec4Cache = new();
+
     public uint Handle => _handle;
 
     private ShaderProgram(GL gl, uint handle)
@@ -115,31 +124,42 @@ public sealed class ShaderProgram : IDisposable
     public void SetUniform(string name, int value)
     {
         int loc = GetUniformLocation(name);
-        if (loc >= 0) _gl.Uniform1(loc, value);
+        if (loc < 0) return;
+        if (_intCache.TryGetValue(loc, out int prev) && prev == value) return;
+        _intCache[loc] = value;
+        _gl.Uniform1(loc, value);
     }
 
     public void SetUniform(string name, float value)
     {
         int loc = GetUniformLocation(name);
-        if (loc >= 0) _gl.Uniform1(loc, value);
+        if (loc < 0) return;
+        if (_floatCache.TryGetValue(loc, out float prev) && prev == value) return;
+        _floatCache[loc] = value;
+        _gl.Uniform1(loc, value);
     }
 
     public void SetUniform(string name, bool value)
     {
-        int loc = GetUniformLocation(name);
-        if (loc >= 0) _gl.Uniform1(loc, value ? 1 : 0);
+        SetUniform(name, value ? 1 : 0);
     }
 
     public void SetUniform(string name, Vector3 value)
     {
         int loc = GetUniformLocation(name);
-        if (loc >= 0) _gl.Uniform3(loc, value.X, value.Y, value.Z);
+        if (loc < 0) return;
+        if (_vec3Cache.TryGetValue(loc, out Vector3 prev) && prev == value) return;
+        _vec3Cache[loc] = value;
+        _gl.Uniform3(loc, value.X, value.Y, value.Z);
     }
 
     public void SetUniform(string name, Vector4 value)
     {
         int loc = GetUniformLocation(name);
-        if (loc >= 0) _gl.Uniform4(loc, value.X, value.Y, value.Z, value.W);
+        if (loc < 0) return;
+        if (_vec4Cache.TryGetValue(loc, out Vector4 prev) && prev == value) return;
+        _vec4Cache[loc] = value;
+        _gl.Uniform4(loc, value.X, value.Y, value.Z, value.W);
     }
 
     public unsafe void SetUniform(string name, Matrix4x4 value)

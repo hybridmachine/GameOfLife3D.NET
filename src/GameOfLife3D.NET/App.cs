@@ -294,7 +294,9 @@ public sealed class App : IDisposable
         _cinematic?.Update(currentTime);
         _ui.StatusBar.UpdateFPS(currentTime);
 
-        // Update renderer with current generations
+        // Update renderer with current generations. Recording forces sync
+        // rebuilds so frame content tracks the fixed-step recording clock.
+        _renderer.ForceSynchronousRebuilds = recording;
         _renderer.UpdateGenerations(_engine.Generations, _ui.DisplayStart, _ui.DisplayEnd);
 
         // Render

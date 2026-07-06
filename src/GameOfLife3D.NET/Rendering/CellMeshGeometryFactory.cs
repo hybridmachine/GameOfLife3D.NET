@@ -57,10 +57,27 @@ public static class CellMeshGeometryFactory
         _ => CubeGeometry.Value,
     };
 
-    public static CellShape ResolveRenderShape(CellShape shape, int instanceCount) =>
-        shape == CellShape.BeveledCube && instanceCount > BeveledCubeRenderFallbackThreshold
-            ? CellShape.Cube
-            : shape;
+    /// <summary>
+    /// Above <see cref="BeveledCubeRenderFallbackThreshold"/> instances,
+    /// high-poly shapes fall back to cheaper analogues so vertex cost stays
+    /// bounded at extreme cell counts: BeveledCube→Cube, Sphere→Icosahedron,
+    /// Capsule→Octahedron, Dodecahedron→Cube. Low-poly shapes render as
+    /// selected at any count.
+    /// </summary>
+    public static CellShape ResolveRenderShape(CellShape shape, int instanceCount)
+    {
+        if (instanceCount <= BeveledCubeRenderFallbackThreshold)
+            return shape;
+
+        return shape switch
+        {
+            CellShape.BeveledCube => CellShape.Cube,
+            CellShape.Sphere => CellShape.Icosahedron,
+            CellShape.Capsule => CellShape.Octahedron,
+            CellShape.Dodecahedron => CellShape.Cube,
+            _ => shape,
+        };
+    }
 
     private static CellMeshGeometry CreateCube()
     {

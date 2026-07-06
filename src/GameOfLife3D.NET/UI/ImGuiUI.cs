@@ -830,6 +830,9 @@ public sealed class ImGuiUI
         if (ImGui.MenuItem("Show Statistics", "", _showStatisticsWindow))
             _showStatisticsWindow = !_showStatisticsWindow;
 
+        if (ImGui.MenuItem("Show Perf Stats", "", _statusBar.ShowPerfStats))
+            _statusBar.ShowPerfStats = !_statusBar.ShowPerfStats;
+
         ImGui.Separator();
 
         if (ImGui.MenuItem("Reset Camera"))

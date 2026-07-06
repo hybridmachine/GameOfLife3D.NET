@@ -18,7 +18,11 @@ public sealed class InstancedCellRenderer : IDisposable
     private uint _instanceVbo;
     private int _maxInstances;
     private int _instanceCount;
-    private bool _dirty;
+
+    // Dirty instance range [start, end) pending upload. Union of all ranges
+    // marked since the last upload; int.MaxValue start means "clean".
+    private int _dirtyStart = int.MaxValue;
+    private int _dirtyEnd;
 
     // Pre-allocated buffer
     private InstanceData[] _instanceBuffer = [];
@@ -89,30 +93,75 @@ public sealed class InstancedCellRenderer : IDisposable
 
     public InstanceData[] GetInstanceBuffer() => _instanceBuffer;
 
+    /// <summary>
+    /// Swaps in a fully written replacement buffer (same capacity) and returns
+    /// the previous one for reuse as the next staging buffer. Used by the
+    /// background full-rebuild path; caller must follow up with
+    /// <see cref="SetInstanceCount(int)"/> to mark the new contents dirty.
+    /// </summary>
+    public InstanceData[] SwapInstanceBuffer(InstanceData[] newBuffer)
+    {
+        var old = _instanceBuffer;
+        _instanceBuffer = newBuffer;
+        return old;
+    }
+
     public int MaxInstances => _maxInstances;
 
     public void SetInstanceCount(int count)
     {
         _instanceCount = Math.Min(count, _maxInstances);
-        _dirty = true;
+        MarkDirty(0, _instanceCount);
+    }
+
+    /// <summary>
+    /// Sets the instance count when only <c>[dirtyStart, dirtyEnd)</c> of the
+    /// buffer was modified, so the next upload transfers just that span.
+    /// Pass an empty range for pure count changes (e.g. truncation) that
+    /// need no upload at all.
+    /// </summary>
+    public void SetInstanceCount(int count, int dirtyStart, int dirtyEnd)
+    {
+        _instanceCount = Math.Min(count, _maxInstances);
+        MarkDirty(dirtyStart, Math.Min(dirtyEnd, _instanceCount));
+    }
+
+    private void MarkDirty(int start, int endExclusive)
+    {
+        if (endExclusive <= start) return;
+        _dirtyStart = Math.Min(_dirtyStart, start);
+        _dirtyEnd = Math.Max(_dirtyEnd, endExclusive);
     }
 
     private unsafe void UploadIfDirty()
     {
-        if (!_dirty || _instanceCount == 0) return;
+        if (_instanceCount == 0) return;
+
+        // Clamp to the drawn range; data past _instanceCount is never sampled
+        // and whichever path grows the count re-marks the region it wrote.
+        int start = Math.Min(_dirtyStart, _instanceCount);
+        int end = Math.Min(_dirtyEnd, _instanceCount);
+        if (end <= start) return;
+
+        long uploadStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        int stride = Marshal.SizeOf<InstanceData>();
+        long bytes = (long)(end - start) * stride;
 
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVbo);
         fixed (InstanceData* ptr = _instanceBuffer)
         {
-            _gl.BufferSubData(BufferTargetARB.ArrayBuffer, 0,
-                (nuint)(_instanceCount * Marshal.SizeOf<InstanceData>()), ptr);
+            _gl.BufferSubData(BufferTargetARB.ArrayBuffer, (nint)start * stride, (nuint)bytes, ptr + start);
         }
-        _dirty = false;
+        _dirtyStart = int.MaxValue;
+        _dirtyEnd = 0;
+
+        RenderPerfStats.LastUploadMs = System.Diagnostics.Stopwatch.GetElapsedTime(uploadStart).TotalMilliseconds;
+        RenderPerfStats.LastUploadBytes = bytes;
     }
 
-    private void GetActiveMesh(RenderSettings settings, out uint vao, out uint indexCount)
+    private void GetActiveMesh(RenderSettings settings, CellShape? overrideShape, out uint vao, out uint indexCount)
     {
-        CellShape effective = CellMeshGeometryFactory.ResolveRenderShape(settings.Shape, _instanceCount);
+        CellShape effective = CellMeshGeometryFactory.ResolveRenderShape(overrideShape ?? settings.Shape, _instanceCount);
 
         IInstancedMesh mesh = _meshes.TryGetValue(effective, out var m)
             ? m
@@ -122,7 +171,7 @@ public sealed class InstancedCellRenderer : IDisposable
         indexCount = mesh.IndexCount;
     }
 
-    public void RenderSolid(ShaderProgram shader, Matrix4x4 view, Matrix4x4 proj, float time, RenderSettings settings)
+    public void RenderSolid(ShaderProgram shader, Matrix4x4 view, Matrix4x4 proj, float time, RenderSettings settings, CellShape? overrideShape = null)
     {
         if (_instanceCount == 0 || _meshes.Count == 0) return;
         UploadIfDirty();
@@ -152,7 +201,7 @@ public sealed class InstancedCellRenderer : IDisposable
         shader.SetUniform("uFadeOpacity", settings.FadeOpacity);
         shader.SetUniform("uGlobalAlpha", settings.GlobalAlpha);
 
-        GetActiveMesh(settings, out uint vao, out uint indexCount);
+        GetActiveMesh(settings, overrideShape, out uint vao, out uint indexCount);
         _gl.BindVertexArray(vao);
         unsafe
         {
@@ -196,7 +245,7 @@ public sealed class InstancedCellRenderer : IDisposable
         _gl.PolygonOffset(-1f, -1f);
         _gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line);
 
-        GetActiveMesh(settings, out uint vao, out uint indexCount);
+        GetActiveMesh(settings, null, out uint vao, out uint indexCount);
         _gl.BindVertexArray(vao);
         unsafe
         {
