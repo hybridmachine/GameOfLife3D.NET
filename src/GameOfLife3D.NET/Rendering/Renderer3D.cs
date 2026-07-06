@@ -33,6 +33,28 @@ public sealed class Renderer3D : IDisposable
     private float _lastMaxY;
     private int _currentInstanceCount;
 
+    // Instance offset where each visible generation starts, indexed by
+    // (genIndex - displayStart). Enables append/truncate fast paths when the
+    // display range only grows or shrinks at the end (playback, scrubbing).
+    private readonly List<int> _genStartOffsets = new();
+    // Set when a rebuild/append hit the buffer capacity mid-write; incremental
+    // paths are unsafe until the next full rebuild.
+    private bool _bufferCapped;
+
+    // Background full-rebuild job. Full rebuilds above the threshold fill a
+    // lazily allocated staging buffer on a worker task; the render thread
+    // keeps drawing the stale buffer, then swaps + uploads on completion.
+    private const int BackgroundRebuildThreshold = 250_000;
+    private Task<RebuildJobResult>? _rebuildJob;
+    private InstanceData[]? _stagingBuffer;
+    // Bumped by InvalidateState so an in-flight job computed from content
+    // that has since changed (edits, session loads) is discarded on arrival.
+    private int _rebuildVersion;
+
+    private sealed record RebuildJobResult(
+        int Version, int DisplayStart, int DisplayEnd, int GenerationCount,
+        int InstanceCount, bool Capped, List<int> GenStartOffsets, InstanceData[] Buffer);
+
     // Preview cells for edit mode
     private int _previewCount;
 
@@ -43,6 +65,13 @@ public sealed class Renderer3D : IDisposable
     public RenderSettings Settings => _settings;
     public PostProcessPipeline? PostProcess => _postProcess;
     public ShapeThumbnailRenderer? ShapeThumbnails => _shapeThumbnails;
+
+    /// <summary>
+    /// When true (set during video recording), full instance rebuilds run
+    /// synchronously so captured frames can't lag behind the fixed-step
+    /// recording clock by a frame or two.
+    /// </summary>
+    public bool ForceSynchronousRebuilds { get; set; }
 
     public Renderer3D(GL gl)
     {
@@ -98,6 +127,7 @@ public sealed class Renderer3D : IDisposable
         _lastDisplayStart = -1;
         _lastDisplayEnd = -1;
         _lastGenerationCount = -1;
+        _rebuildVersion++;
     }
 
     public void SetPreviewCells(ReadOnlySpan<InstanceData> previewCells)
@@ -115,13 +145,14 @@ public sealed class Renderer3D : IDisposable
         }
 
         _previewCount = previewAdded;
-        _instancedRenderer.SetInstanceCount(baseCount + previewAdded);
+        _instancedRenderer.SetInstanceCount(baseCount + previewAdded, baseCount, baseCount + previewAdded);
     }
 
     public void ClearPreviewCells()
     {
         if (_instancedRenderer == null || _previewCount == 0) return;
-        _instancedRenderer.SetInstanceCount(_currentInstanceCount);
+        // Count-only change: the base cells are untouched, nothing to upload.
+        _instancedRenderer.SetInstanceCount(_currentInstanceCount, 0, 0);
         _previewCount = 0;
     }
 
@@ -167,40 +198,265 @@ public sealed class Renderer3D : IDisposable
         if (_instancedRenderer == null) return;
         if (_fallingActive) return;
 
+        TryApplyCompletedRebuildJob(generations, displayStart);
+
         bool stateChanged = displayStart != _lastDisplayStart ||
                            displayEnd != _lastDisplayEnd ||
                            generations.Count != _lastGenerationCount;
 
         if (!stateChanged) return;
 
-        var buffer = _instancedRenderer.GetInstanceBuffer();
-        int maxInstances = _instancedRenderer.MaxInstances;
-        int instanceIndex = 0;
-        float halfSize = _gridSize / 2f;
+        long rebuildStart = System.Diagnostics.Stopwatch.GetTimestamp();
 
-        for (int genIndex = displayStart; genIndex <= displayEnd && genIndex < generations.Count; genIndex++)
+        int lastEffectiveEnd = Math.Min(_lastDisplayEnd, _lastGenerationCount - 1);
+        int newEffectiveEnd = Math.Min(displayEnd, generations.Count - 1);
+
+        // Incremental paths are valid only when the window start is unchanged,
+        // previous state exists, the engine's generation list only grew
+        // (generations are append-only; edits/clears shrink the count or go
+        // through InvalidateState), and the buffer never hit capacity.
+        bool incremental = displayStart == _lastDisplayStart
+                        && _lastDisplayStart >= 0
+                        && generations.Count >= _lastGenerationCount
+                        && !_bufferCapped;
+
+        if (incremental && newEffectiveEnd >= lastEffectiveEnd)
         {
-            var generation = generations[genIndex];
-            foreach (var cell in generation.LiveCells)
+            AppendGenerations(generations, displayStart, lastEffectiveEnd, newEffectiveEnd);
+        }
+        else if (incremental)
+        {
+            TruncateGenerations(displayStart, newEffectiveEnd);
+        }
+        else
+        {
+            if (_rebuildJob != null)
             {
-                if (instanceIndex >= maxInstances) break;
-
-                buffer[instanceIndex++] = new InstanceData
-                {
-                    Position = new Vector3(cell.X - halfSize, genIndex, cell.Y - halfSize),
-                    GenerationT = genIndex,
-                };
+                // A background job is already computing a buffer, but it's
+                // chasing a request that's now stale (the display range moved
+                // again, or the generation count changed outside the
+                // incremental window). Bump the version so its result is
+                // discarded if/when it lands, and let a fresh request
+                // supersede it rather than stalling until the old job
+                // finishes. The old task keeps running harmlessly in the
+                // background against its own (now-unshared) staging buffer;
+                // attach a fault-observing continuation so an exception in it
+                // doesn't go unnoticed just because we stop awaiting its result.
+                _rebuildJob.ContinueWith(
+                    static t => _ = t.Exception,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                _rebuildVersion++;
+                _rebuildJob = null;
             }
+
+            if (!ForceSynchronousRebuilds &&
+                EstimateInstanceCount(generations, displayStart, newEffectiveEnd) > BackgroundRebuildThreshold)
+            {
+                // Tracking state is updated when the job result is applied.
+                StartBackgroundRebuild(generations, displayStart, displayEnd, newEffectiveEnd);
+                return;
+            }
+
+            RebuildAllGenerations(generations, displayStart, newEffectiveEnd);
         }
 
-        _currentInstanceCount = instanceIndex;
-        _instancedRenderer.SetInstanceCount(instanceIndex);
+        RenderPerfStats.LastRebuildMs = System.Diagnostics.Stopwatch.GetElapsedTime(rebuildStart).TotalMilliseconds;
+        RenderPerfStats.LastRebuildInstances = _currentInstanceCount;
 
         _lastMinY = displayStart;
         _lastMaxY = Math.Max(displayEnd, displayStart + 1);
         _lastDisplayStart = displayStart;
         _lastDisplayEnd = displayEnd;
         _lastGenerationCount = generations.Count;
+    }
+
+    private void TryApplyCompletedRebuildJob(IReadOnlyList<Generation> generations, int displayStart)
+    {
+        if (_rebuildJob is not { IsCompleted: true } job) return;
+        _rebuildJob = null;
+
+        if (!job.IsCompletedSuccessfully)
+        {
+            _ = job.Exception; // observe so a faulted job can't surface later
+            return;
+        }
+
+        var result = job.Result;
+        // Discard stale results: content invalidated since launch (version
+        // bumped by InvalidateState or by a superseding request), window
+        // start moved, the engine's generation list shrank (reset/edit), or
+        // an incremental append/truncate already advanced the live buffer
+        // past what this job represents while it was computing — applying it
+        // now would visibly regress the display. The normal state-changed
+        // path will pick up from wherever the live buffer currently is.
+        if (result.Version != _rebuildVersion ||
+            result.DisplayStart != displayStart ||
+            generations.Count < result.GenerationCount ||
+            _lastGenerationCount >= result.GenerationCount ||
+            _lastDisplayEnd >= result.DisplayEnd)
+        {
+            // The write itself already completed successfully; reclaim the
+            // buffer for the next job instead of letting it go to waste.
+            _stagingBuffer ??= result.Buffer;
+            return;
+        }
+
+        // The staging buffer is fully written; swap it in and keep the old
+        // live buffer as the next staging target.
+        _stagingBuffer = _instancedRenderer!.SwapInstanceBuffer(result.Buffer);
+
+        _genStartOffsets.Clear();
+        _genStartOffsets.AddRange(result.GenStartOffsets);
+        _bufferCapped = result.Capped;
+        _currentInstanceCount = result.InstanceCount;
+        _previewCount = 0;
+        _instancedRenderer.SetInstanceCount(result.InstanceCount);
+
+        _lastMinY = result.DisplayStart;
+        _lastMaxY = Math.Max(result.DisplayEnd, result.DisplayStart + 1);
+        _lastDisplayStart = result.DisplayStart;
+        _lastDisplayEnd = result.DisplayEnd;
+        _lastGenerationCount = result.GenerationCount;
+
+        RenderPerfStats.LastRebuildInstances = result.InstanceCount;
+        // If the display range grew while the job ran, the append fast path
+        // catches up on this same call via the state-changed check.
+    }
+
+    private void StartBackgroundRebuild(IReadOnlyList<Generation> generations, int displayStart, int displayEnd, int effectiveEnd)
+    {
+        // Loan out the free staging buffer to this job and clear the field so
+        // a job superseding this one (before it completes) allocates its own
+        // buffer instead of racing on the same array. The loaned buffer comes
+        // back via _stagingBuffer once this job's result is observed —
+        // applied, discarded-but-reclaimed, or (rarely) abandoned outright.
+        var staging = _stagingBuffer ?? new InstanceData[_instancedRenderer!.MaxInstances];
+        _stagingBuffer = null;
+
+        // Snapshot the generation references on the render thread: Generation
+        // instances are immutable once created and the engine only appends or
+        // replaces list entries, so the worker can read them safely while the
+        // engine keeps computing.
+        var gens = new Generation[Math.Max(effectiveEnd - displayStart + 1, 0)];
+        for (int i = 0; i < gens.Length; i++)
+            gens[i] = generations[displayStart + i];
+
+        int version = _rebuildVersion;
+        int genCount = generations.Count;
+        int maxInstances = _instancedRenderer!.MaxInstances;
+        float halfSize = _gridSize / 2f;
+
+        _rebuildJob = Task.Run(() =>
+        {
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+            var offsets = new List<int>(gens.Length);
+            int instanceIndex = 0;
+            bool capped = false;
+
+            for (int i = 0; i < gens.Length; i++)
+            {
+                offsets.Add(instanceIndex);
+                int genIndex = displayStart + i;
+                foreach (var cell in gens[i].LiveCells)
+                {
+                    if (instanceIndex >= maxInstances)
+                    {
+                        capped = true;
+                        break;
+                    }
+
+                    staging[instanceIndex++] = new InstanceData
+                    {
+                        Position = new Vector3(cell.X - halfSize, genIndex, cell.Y - halfSize),
+                        GenerationT = genIndex,
+                    };
+                }
+            }
+
+            RenderPerfStats.LastRebuildMs = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            return new RebuildJobResult(version, displayStart, displayEnd, genCount, instanceIndex, capped, offsets, staging);
+        });
+    }
+
+    private static int EstimateInstanceCount(IReadOnlyList<Generation> generations, int displayStart, int effectiveEnd)
+    {
+        long total = 0;
+        for (int genIndex = displayStart; genIndex <= effectiveEnd; genIndex++)
+            total += generations[genIndex].LiveCells.Count;
+        return (int)Math.Min(total, int.MaxValue);
+    }
+
+    private void RebuildAllGenerations(IReadOnlyList<Generation> generations, int displayStart, int effectiveEnd)
+    {
+        var buffer = _instancedRenderer!.GetInstanceBuffer();
+        int maxInstances = _instancedRenderer.MaxInstances;
+        int instanceIndex = 0;
+        float halfSize = _gridSize / 2f;
+
+        _genStartOffsets.Clear();
+        _bufferCapped = false;
+
+        for (int genIndex = displayStart; genIndex <= effectiveEnd; genIndex++)
+        {
+            _genStartOffsets.Add(instanceIndex);
+            instanceIndex = WriteGeneration(buffer, generations[genIndex], genIndex, instanceIndex, maxInstances, halfSize);
+        }
+
+        _currentInstanceCount = instanceIndex;
+        _previewCount = 0;
+        _instancedRenderer.SetInstanceCount(instanceIndex, 0, instanceIndex);
+    }
+
+    private void AppendGenerations(IReadOnlyList<Generation> generations, int displayStart, int lastEffectiveEnd, int newEffectiveEnd)
+    {
+        var buffer = _instancedRenderer!.GetInstanceBuffer();
+        int maxInstances = _instancedRenderer.MaxInstances;
+        int instanceIndex = _currentInstanceCount;
+        int appendFrom = instanceIndex;
+        float halfSize = _gridSize / 2f;
+
+        for (int genIndex = Math.Max(lastEffectiveEnd + 1, displayStart); genIndex <= newEffectiveEnd; genIndex++)
+        {
+            _genStartOffsets.Add(instanceIndex);
+            instanceIndex = WriteGeneration(buffer, generations[genIndex], genIndex, instanceIndex, maxInstances, halfSize);
+        }
+
+        _currentInstanceCount = instanceIndex;
+        _previewCount = 0;
+        _instancedRenderer.SetInstanceCount(instanceIndex, appendFrom, instanceIndex);
+    }
+
+    private void TruncateGenerations(int displayStart, int newEffectiveEnd)
+    {
+        int keepGens = Math.Max(newEffectiveEnd - displayStart + 1, 0);
+        int newCount = keepGens < _genStartOffsets.Count ? _genStartOffsets[keepGens] : _currentInstanceCount;
+
+        if (_genStartOffsets.Count > keepGens)
+            _genStartOffsets.RemoveRange(keepGens, _genStartOffsets.Count - keepGens);
+
+        _currentInstanceCount = newCount;
+        _previewCount = 0;
+        // Pure count change — no buffer contents were touched, so no upload.
+        _instancedRenderer!.SetInstanceCount(newCount, 0, 0);
+    }
+
+    private int WriteGeneration(InstanceData[] buffer, Generation generation, int genIndex, int instanceIndex, int maxInstances, float halfSize)
+    {
+        foreach (var cell in generation.LiveCells)
+        {
+            if (instanceIndex >= maxInstances)
+            {
+                _bufferCapped = true;
+                break;
+            }
+
+            buffer[instanceIndex++] = new InstanceData
+            {
+                Position = new Vector3(cell.X - halfSize, genIndex, cell.Y - halfSize),
+                GenerationT = genIndex,
+            };
+        }
+        return instanceIndex;
     }
 
     public void Render(Matrix4x4 view, Matrix4x4 proj, int screenWidth, int screenHeight, double currentTime, int logicalWidth = 0, int logicalHeight = 0)
@@ -228,7 +484,10 @@ public sealed class Renderer3D : IDisposable
 
         if (wantsReflection)
         {
-            _floorRenderer!.EnsureScale(_settings.ReflectionResolutionScale);
+            // The reflection is ripple-distorted anyway, so render it with the
+            // cheap cube mesh and step the reflection resolution down as the
+            // instance count rises — the main scene keeps full quality.
+            _floorRenderer!.EnsureScale(_settings.ReflectionResolutionScale * ReflectionAutoScale(_currentInstanceCount));
             Vector3 reflectClear = _settings.FogEnabled ? _settings.FogColor : new Vector3(0.02f, 0.03f, 0.05f);
             _floorRenderer.BeginReflectionPass(reflectClear);
 
@@ -239,7 +498,7 @@ public sealed class Renderer3D : IDisposable
             _cubeShader.SetUniform("uMaxY", _lastMaxY);
 
             _gl.Enable(EnableCap.DepthTest);
-            _instancedRenderer.RenderSolid(_cubeShader, mirroredView, proj, time, _settings);
+            _instancedRenderer.RenderSolid(_cubeShader, mirroredView, proj, time, _settings, CellShape.Cube);
 
             _floorRenderer.EndReflectionPass();
         }
@@ -317,6 +576,7 @@ public sealed class Renderer3D : IDisposable
         // End FBO scene and composite
         if (useFBO)
         {
+            _bloom?.SetReducedQuality(_currentInstanceCount > CellMeshGeometryFactory.BeveledCubeRenderFallbackThreshold);
             _postProcess!.EndSceneAndComposite(_bloom, _settings);
         }
 
@@ -342,6 +602,18 @@ public sealed class Renderer3D : IDisposable
             return Vector3.Zero;
         return new Vector3(inv.M41, inv.M42, inv.M43);
     }
+
+    /// <summary>
+    /// Automatic quality tiers for the reflection render target. Applied as a
+    /// factor on top of the user's ReflectionResolutionScale so the setting
+    /// itself is never mutated.
+    /// </summary>
+    private static float ReflectionAutoScale(int instanceCount) => instanceCount switch
+    {
+        >= 250_000 => 0.25f,
+        >= 100_000 => 0.5f,
+        _ => 1.0f,
+    };
 
     public int GetVisibleCellCount() => _currentInstanceCount;
 

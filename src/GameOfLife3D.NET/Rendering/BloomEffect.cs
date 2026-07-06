@@ -19,8 +19,15 @@ public sealed class BloomEffect : IDisposable
     private uint _quadVao;
     private uint _quadVbo;
 
+    private int _fullWidth;
+    private int _fullHeight;
     private int _bloomWidth;
     private int _bloomHeight;
+
+    // Auto quality tier: above the high-instance threshold the bloom target
+    // drops from 1/4 to 1/8 resolution and blur passes from 6 to 4.
+    private int _divisor = 4;
+    private int _blurPasses = 6;
 
     public uint OutputTexture => _pingPongTextures[0];
 
@@ -29,10 +36,32 @@ public sealed class BloomEffect : IDisposable
         _gl = gl;
     }
 
+    /// <summary>
+    /// Switches between full quality (1/4 res, 6 blur passes) and reduced
+    /// quality (1/8 res, 4 passes) for high instance counts. Recreates the
+    /// bloom FBOs only when the tier actually changes.
+    /// </summary>
+    public void SetReducedQuality(bool reduced)
+    {
+        int divisor = reduced ? 8 : 4;
+        if (divisor == _divisor) return;
+
+        _divisor = divisor;
+        _blurPasses = reduced ? 4 : 6;
+
+        if (_fullWidth <= 0 || _fullHeight <= 0) return;
+        _bloomWidth = Math.Max(_fullWidth / divisor, 1);
+        _bloomHeight = Math.Max(_fullHeight / divisor, 1);
+        DeleteFBOs();
+        CreateFBOs();
+    }
+
     public void Initialize(int fullWidth, int fullHeight)
     {
-        _bloomWidth = fullWidth / 4;
-        _bloomHeight = fullHeight / 4;
+        _fullWidth = fullWidth;
+        _fullHeight = fullHeight;
+        _bloomWidth = Math.Max(fullWidth / _divisor, 1);
+        _bloomHeight = Math.Max(fullHeight / _divisor, 1);
 
         CreateQuad();
         CreateFBOs();
@@ -43,8 +72,10 @@ public sealed class BloomEffect : IDisposable
 
     public void Resize(int fullWidth, int fullHeight)
     {
-        int newW = fullWidth / 4;
-        int newH = fullHeight / 4;
+        _fullWidth = fullWidth;
+        _fullHeight = fullHeight;
+        int newW = Math.Max(fullWidth / _divisor, 1);
+        int newH = Math.Max(fullHeight / _divisor, 1);
         if (newW == _bloomWidth && newH == _bloomHeight) return;
 
         _bloomWidth = newW;
@@ -73,7 +104,7 @@ public sealed class BloomEffect : IDisposable
         bool horizontal = true;
         uint inputTexture = _brightTexture;
 
-        for (int i = 0; i < 6; i++) // 3 horizontal + 3 vertical passes
+        for (int i = 0; i < _blurPasses; i++) // alternating horizontal/vertical passes
         {
             int targetIdx = horizontal ? 1 : 0;
             _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _pingPongFbos[targetIdx]);
@@ -94,10 +125,9 @@ public sealed class BloomEffect : IDisposable
         _gl.Viewport(0, 0, (uint)fullWidth, (uint)fullHeight);
     }
 
-    private void SetSamplerUniform(ShaderProgram shader, string name, int unit)
+    private static void SetSamplerUniform(ShaderProgram shader, string name, int unit)
     {
-        int loc = shader.GetUniformLocation(name);
-        if (loc >= 0) _gl.Uniform1(loc, unit);
+        shader.SetUniform(name, unit);
     }
 
     private unsafe void CreateQuad()

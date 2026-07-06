@@ -28,6 +28,9 @@ public sealed class StatusBar
 
     public bool ShowEditBadge { get; set; }
 
+    /// <summary>When true, shows instance rebuild/upload timing segments.</summary>
+    public bool ShowPerfStats { get; set; }
+
     public void Render(int displayStart, int displayEnd, string ruleString, int cellCount, int windowWidth, int windowHeight)
     {
         var drawList = ImGui.GetForegroundDrawList();
@@ -67,6 +70,16 @@ public sealed class StatusBar
             : _fps >= 30 ? ImGui.ColorConvertFloat4ToU32(Theme.StatusYellow)
             : ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.3f, 0.3f, 1f));
         x = DrawSegment(drawList, x, textY, "FPS", _fps.ToString(), fpsColor);
+
+        if (ShowPerfStats)
+        {
+            x = DrawDivider(drawList, x, textY);
+            x = DrawSegment(drawList, x, textY, "REBUILD",
+                $"{Rendering.RenderPerfStats.LastRebuildMs:F2}ms");
+            x = DrawDivider(drawList, x, textY);
+            x = DrawSegment(drawList, x, textY, "UPLOAD",
+                $"{Rendering.RenderPerfStats.LastUploadMs:F2}ms/{FormatBytes(Rendering.RenderPerfStats.LastUploadBytes)}");
+        }
 
         // Edit badge
         if (ShowEditBadge)
@@ -109,5 +122,12 @@ public sealed class StatusBar
         return n >= 1_000_000 ? $"{n / 1_000_000.0:F1}M"
              : n >= 1_000 ? $"{n / 1_000.0:F1}K"
              : n.ToString();
+    }
+
+    private static string FormatBytes(long b)
+    {
+        return b >= 1_048_576 ? $"{b / 1_048_576.0:F1}MB"
+             : b >= 1_024 ? $"{b / 1_024.0:F1}KB"
+             : $"{b}B";
     }
 }
