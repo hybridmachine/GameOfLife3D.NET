@@ -135,13 +135,32 @@ public sealed class InstancedCellRenderer : IDisposable
 
     private unsafe void UploadIfDirty()
     {
-        if (_instanceCount == 0) return;
+        if (_instanceCount == 0)
+        {
+            // Nothing to draw, so nothing to upload — reset so a stale wide
+            // range left over from a prior write doesn't get unioned with
+            // whatever range the next SetInstanceCount call marks.
+            _dirtyStart = int.MaxValue;
+            _dirtyEnd = 0;
+            return;
+        }
 
         // Clamp to the drawn range; data past _instanceCount is never sampled
         // and whichever path grows the count re-marks the region it wrote.
         int start = Math.Min(_dirtyStart, _instanceCount);
         int end = Math.Min(_dirtyEnd, _instanceCount);
-        if (end <= start) return;
+        if (end <= start)
+        {
+            // The dirty range clamped to empty (e.g. a truncation dropped
+            // everything past the new count, or a preview clear shrank the
+            // count back to previously-uploaded data). Reset explicitly —
+            // otherwise the stale [_dirtyStart, _dirtyEnd) would later get
+            // unioned with a genuinely small write and force a much larger
+            // upload than necessary.
+            _dirtyStart = int.MaxValue;
+            _dirtyEnd = 0;
+            return;
+        }
 
         long uploadStart = System.Diagnostics.Stopwatch.GetTimestamp();
         int stride = Marshal.SizeOf<InstanceData>();

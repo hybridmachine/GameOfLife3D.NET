@@ -53,7 +53,7 @@ public sealed class Renderer3D : IDisposable
 
     private sealed record RebuildJobResult(
         int Version, int DisplayStart, int DisplayEnd, int GenerationCount,
-        int InstanceCount, bool Capped, List<int> GenStartOffsets);
+        int InstanceCount, bool Capped, List<int> GenStartOffsets, InstanceData[] Buffer);
 
     // Preview cells for edit mode
     private int _previewCount;
@@ -206,10 +206,6 @@ public sealed class Renderer3D : IDisposable
 
         if (!stateChanged) return;
 
-        // A job is already computing a buffer for an earlier request; keep
-        // drawing the stale buffer and re-evaluate when it lands.
-        if (_rebuildJob != null) return;
-
         long rebuildStart = System.Diagnostics.Stopwatch.GetTimestamp();
 
         int lastEffectiveEnd = Math.Min(_lastDisplayEnd, _lastGenerationCount - 1);
@@ -232,15 +228,35 @@ public sealed class Renderer3D : IDisposable
         {
             TruncateGenerations(displayStart, newEffectiveEnd);
         }
-        else if (!ForceSynchronousRebuilds &&
-                 EstimateInstanceCount(generations, displayStart, newEffectiveEnd) > BackgroundRebuildThreshold)
-        {
-            // Tracking state is updated when the job result is applied.
-            StartBackgroundRebuild(generations, displayStart, displayEnd, newEffectiveEnd);
-            return;
-        }
         else
         {
+            if (_rebuildJob != null)
+            {
+                // A background job is already computing a buffer, but it's
+                // chasing a request that's now stale (the display range moved
+                // again, or the generation count changed outside the
+                // incremental window). Bump the version so its result is
+                // discarded if/when it lands, and let a fresh request
+                // supersede it rather than stalling until the old job
+                // finishes. The old task keeps running harmlessly in the
+                // background against its own (now-unshared) staging buffer;
+                // attach a fault-observing continuation so an exception in it
+                // doesn't go unnoticed just because we stop awaiting its result.
+                _rebuildJob.ContinueWith(
+                    static t => _ = t.Exception,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                _rebuildVersion++;
+                _rebuildJob = null;
+            }
+
+            if (!ForceSynchronousRebuilds &&
+                EstimateInstanceCount(generations, displayStart, newEffectiveEnd) > BackgroundRebuildThreshold)
+            {
+                // Tracking state is updated when the job result is applied.
+                StartBackgroundRebuild(generations, displayStart, displayEnd, newEffectiveEnd);
+                return;
+            }
+
             RebuildAllGenerations(generations, displayStart, newEffectiveEnd);
         }
 
@@ -266,17 +282,28 @@ public sealed class Renderer3D : IDisposable
         }
 
         var result = job.Result;
-        // Discard stale results: content invalidated since launch, window
-        // start moved, or the engine's generation list shrank (reset/edit).
-        // The normal state-changed path will rebuild from current state.
+        // Discard stale results: content invalidated since launch (version
+        // bumped by InvalidateState or by a superseding request), window
+        // start moved, the engine's generation list shrank (reset/edit), or
+        // an incremental append/truncate already advanced the live buffer
+        // past what this job represents while it was computing — applying it
+        // now would visibly regress the display. The normal state-changed
+        // path will pick up from wherever the live buffer currently is.
         if (result.Version != _rebuildVersion ||
             result.DisplayStart != displayStart ||
-            generations.Count < result.GenerationCount)
+            generations.Count < result.GenerationCount ||
+            _lastGenerationCount >= result.GenerationCount ||
+            _lastDisplayEnd >= result.DisplayEnd)
+        {
+            // The write itself already completed successfully; reclaim the
+            // buffer for the next job instead of letting it go to waste.
+            _stagingBuffer ??= result.Buffer;
             return;
+        }
 
         // The staging buffer is fully written; swap it in and keep the old
-        // buffer as the next staging target.
-        _stagingBuffer = _instancedRenderer!.SwapInstanceBuffer(_stagingBuffer!);
+        // live buffer as the next staging target.
+        _stagingBuffer = _instancedRenderer!.SwapInstanceBuffer(result.Buffer);
 
         _genStartOffsets.Clear();
         _genStartOffsets.AddRange(result.GenStartOffsets);
@@ -298,7 +325,13 @@ public sealed class Renderer3D : IDisposable
 
     private void StartBackgroundRebuild(IReadOnlyList<Generation> generations, int displayStart, int displayEnd, int effectiveEnd)
     {
-        _stagingBuffer ??= new InstanceData[_instancedRenderer!.MaxInstances];
+        // Loan out the free staging buffer to this job and clear the field so
+        // a job superseding this one (before it completes) allocates its own
+        // buffer instead of racing on the same array. The loaned buffer comes
+        // back via _stagingBuffer once this job's result is observed —
+        // applied, discarded-but-reclaimed, or (rarely) abandoned outright.
+        var staging = _stagingBuffer ?? new InstanceData[_instancedRenderer!.MaxInstances];
+        _stagingBuffer = null;
 
         // Snapshot the generation references on the render thread: Generation
         // instances are immutable once created and the engine only appends or
@@ -312,7 +345,6 @@ public sealed class Renderer3D : IDisposable
         int genCount = generations.Count;
         int maxInstances = _instancedRenderer!.MaxInstances;
         float halfSize = _gridSize / 2f;
-        var staging = _stagingBuffer;
 
         _rebuildJob = Task.Run(() =>
         {
@@ -342,7 +374,7 @@ public sealed class Renderer3D : IDisposable
             }
 
             RenderPerfStats.LastRebuildMs = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds;
-            return new RebuildJobResult(version, displayStart, displayEnd, genCount, instanceIndex, capped, offsets);
+            return new RebuildJobResult(version, displayStart, displayEnd, genCount, instanceIndex, capped, offsets, staging);
         });
     }
 
