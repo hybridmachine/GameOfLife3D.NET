@@ -147,13 +147,13 @@ public sealed class Renderer3D : IDisposable
     /// A later revision can replace this with actual SH baked from the starfield
     /// cubemap via <c>SetPbrSHCoefficients</c> without any shader API changes.
     /// </summary>
-    private void UploadDefaultIblSH(float envIntensity)
+    private void UploadDefaultIblSH()
     {
         if (_pbrShader == null) return;
         _pbrShader.Use();
 
         // 1/(2√π) ≈ 0.28: converts average radiance to L0 SH coefficient.
-        float ambient = envIntensity * 0.28f;
+        const float ambient = 0.28f;
         _pbrShader.SetUniform("uIblSh[0]", new System.Numerics.Vector3(ambient, ambient, ambient));
         for (int i = 1; i < 9; i++)
             _pbrShader.SetUniform($"uIblSh[{i}]", System.Numerics.Vector3.Zero);
@@ -590,8 +590,8 @@ public sealed class Renderer3D : IDisposable
             _pbrShader.SetUniform("uCoatIor", mat.CoatIor);
             _pbrShader.SetUniform("uEnvIntensity", _settings.EnvIntensity);
 
-            // Upload SH IBL coefficients scaled to the current env intensity.
-            UploadDefaultIblSH(_settings.EnvIntensity);
+            // Environment intensity is applied by the shader to both IBL lobes.
+            UploadDefaultIblSH();
         }
 
         // Render solid cubes

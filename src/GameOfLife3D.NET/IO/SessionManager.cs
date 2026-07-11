@@ -351,11 +351,21 @@ public static class SessionManager
         // ActiveMaterial stays null (legacy shader). If any parameter field is present
         // we reconstruct the material from persisted values; fields that are absent
         // fall back to CellMaterial.Default.
-        bool hasMaterial = data.MatBaseColorR.HasValue
+        bool hasMaterial = data.MaterialFilePath is not null
+            || data.MatBaseColorR.HasValue
+            || data.MatBaseColorG.HasValue
+            || data.MatBaseColorB.HasValue
             || data.MatBaseMetalness.HasValue
+            || data.MatBaseDiffuseRoughness.HasValue
             || data.MatSpecularRoughness.HasValue
+            || data.MatSpecularIor.HasValue
+            || data.MatEmissionColorR.HasValue
+            || data.MatEmissionColorG.HasValue
+            || data.MatEmissionColorB.HasValue
             || data.MatEmissionLuminance.HasValue
-            || data.MatCoatWeight.HasValue;
+            || data.MatCoatWeight.HasValue
+            || data.MatCoatRoughness.HasValue
+            || data.MatCoatIor.HasValue;
 
         if (hasMaterial)
         {

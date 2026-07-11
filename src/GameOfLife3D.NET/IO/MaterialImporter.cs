@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Xml.Linq;
 using GameOfLife3D.NET.Rendering;
 
@@ -231,15 +232,34 @@ public static class MaterialImporter
     /// </summary>
     private sealed class PbrJsonDto
     {
+        [JsonPropertyName("base_color")]
         public float[]? BaseColor { get; set; }
+
+        [JsonPropertyName("base_metalness")]
         public float? BaseMetalness { get; set; }
+
+        [JsonPropertyName("base_diffuse_roughness")]
         public float? BaseDiffuseRoughness { get; set; }
+
+        [JsonPropertyName("specular_roughness")]
         public float? SpecularRoughness { get; set; }
+
+        [JsonPropertyName("specular_ior")]
         public float? SpecularIor { get; set; }
+
+        [JsonPropertyName("emission_color")]
         public float[]? EmissionColor { get; set; }
+
+        [JsonPropertyName("emission_luminance")]
         public float? EmissionLuminance { get; set; }
+
+        [JsonPropertyName("coat_weight")]
         public float? CoatWeight { get; set; }
+
+        [JsonPropertyName("coat_roughness")]
         public float? CoatRoughness { get; set; }
+
+        [JsonPropertyName("coat_ior")]
         public float? CoatIor { get; set; }
     }
 }

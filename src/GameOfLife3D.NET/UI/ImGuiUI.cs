@@ -1805,6 +1805,9 @@ public sealed class ImGuiUI
                     ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
                     ImGui.Text($"[Missing] {entry.Name}");
                     ImGui.PopStyleColor();
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton(Icons.Trash))
+                        _materialLibState.Remove(entry.FilePath);
                 }
                 else if (_materialRenameIdx == i)
                 {
