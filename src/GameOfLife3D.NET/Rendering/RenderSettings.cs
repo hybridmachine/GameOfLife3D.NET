@@ -86,6 +86,22 @@ public sealed class RenderSettings
     // pattern loads. 1.0 = fully opaque (normal rendering).
     public float GlobalAlpha { get; set; } = 1f;
 
+    // PBR material — when non-null the PBR shader is used instead of the
+    // legacy Lambertian cube shader.
+    public CellMaterial? ActiveMaterial { get; set; }
+
+    /// <summary>
+    /// Path of the file that was imported to produce <see cref="ActiveMaterial"/>.
+    /// Tracked for display in the UI; not required for rendering.
+    /// </summary>
+    public string? MaterialFilePath { get; set; }
+
+    /// <summary>
+    /// Scale factor applied to both diffuse and specular IBL ambient contributions.
+    /// 0 = no environment lighting; 1 = full IBL. Default gives a gentle fill light.
+    /// </summary>
+    public float EnvIntensity { get; set; } = 0.4f;
+
     // Reflective floor / water — only used when FloorMode == Reflective.
     // WaveStrength=0 gives a perfect mirror; defaults are tuned for a calm,
     // slightly rippled surface that doesn't fight the cubes for attention.

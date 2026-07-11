@@ -100,6 +100,26 @@ public sealed class RenderSessionData
     // Face-cycling gradient stops, flattened RGB triples (length = 3 * stopCount).
     // Nullable for backward compatibility with sessions saved before the editor landed.
     public float[]? GradientStops { get; set; }
+
+    // PBR material — all fields nullable so legacy sessions load cleanly.
+    // When MaterialFilePath is present but the individual parameter fields are
+    // absent (hand-edited JSON), the material defaults are used.
+    public string? MaterialFilePath { get; set; }
+    public float? MatBaseColorR { get; set; }
+    public float? MatBaseColorG { get; set; }
+    public float? MatBaseColorB { get; set; }
+    public float? MatBaseMetalness { get; set; }
+    public float? MatBaseDiffuseRoughness { get; set; }
+    public float? MatSpecularRoughness { get; set; }
+    public float? MatSpecularIor { get; set; }
+    public float? MatEmissionColorR { get; set; }
+    public float? MatEmissionColorG { get; set; }
+    public float? MatEmissionColorB { get; set; }
+    public float? MatEmissionLuminance { get; set; }
+    public float? MatCoatWeight { get; set; }
+    public float? MatCoatRoughness { get; set; }
+    public float? MatCoatIor { get; set; }
+    public float? EnvIntensity { get; set; }
 }
 
 public static class SessionManager
@@ -203,6 +223,23 @@ public static class SessionManager
         ReflectionResolutionScale = s.ReflectionResolutionScale,
         // Gradient stops (flatten R, G, B triples in order)
         GradientStops = FlattenStops(s.GradientStops),
+        // PBR material
+        MaterialFilePath = s.MaterialFilePath,
+        MatBaseColorR = s.ActiveMaterial?.BaseColor.X,
+        MatBaseColorG = s.ActiveMaterial?.BaseColor.Y,
+        MatBaseColorB = s.ActiveMaterial?.BaseColor.Z,
+        MatBaseMetalness = s.ActiveMaterial?.BaseMetalness,
+        MatBaseDiffuseRoughness = s.ActiveMaterial?.BaseDiffuseRoughness,
+        MatSpecularRoughness = s.ActiveMaterial?.SpecularRoughness,
+        MatSpecularIor = s.ActiveMaterial?.SpecularIor,
+        MatEmissionColorR = s.ActiveMaterial?.EmissionColor.X,
+        MatEmissionColorG = s.ActiveMaterial?.EmissionColor.Y,
+        MatEmissionColorB = s.ActiveMaterial?.EmissionColor.Z,
+        MatEmissionLuminance = s.ActiveMaterial?.EmissionLuminance,
+        MatCoatWeight = s.ActiveMaterial?.CoatWeight,
+        MatCoatRoughness = s.ActiveMaterial?.CoatRoughness,
+        MatCoatIor = s.ActiveMaterial?.CoatIor,
+        EnvIntensity = s.EnvIntensity,
     };
 
     private static float[] FlattenStops(IReadOnlyList<Vector3> stops)
@@ -309,5 +346,57 @@ public static class SessionManager
         {
             target.ResetGradient();
         }
+        // PBR material — restore only when at least one parameter field is present.
+        // A session that predates this feature will have all Mat* fields null, so
+        // ActiveMaterial stays null (legacy shader). If any parameter field is present
+        // we reconstruct the material from persisted values; fields that are absent
+        // fall back to CellMaterial.Default.
+        bool hasMaterial = data.MaterialFilePath is not null
+            || data.MatBaseColorR.HasValue
+            || data.MatBaseColorG.HasValue
+            || data.MatBaseColorB.HasValue
+            || data.MatBaseMetalness.HasValue
+            || data.MatBaseDiffuseRoughness.HasValue
+            || data.MatSpecularRoughness.HasValue
+            || data.MatSpecularIor.HasValue
+            || data.MatEmissionColorR.HasValue
+            || data.MatEmissionColorG.HasValue
+            || data.MatEmissionColorB.HasValue
+            || data.MatEmissionLuminance.HasValue
+            || data.MatCoatWeight.HasValue
+            || data.MatCoatRoughness.HasValue
+            || data.MatCoatIor.HasValue;
+
+        if (hasMaterial)
+        {
+            var defaults = CellMaterial.Default;
+            target.ActiveMaterial = new CellMaterial
+            {
+                BaseColor = new Vector3(
+                    data.MatBaseColorR ?? defaults.BaseColor.X,
+                    data.MatBaseColorG ?? defaults.BaseColor.Y,
+                    data.MatBaseColorB ?? defaults.BaseColor.Z),
+                BaseMetalness = data.MatBaseMetalness ?? defaults.BaseMetalness,
+                BaseDiffuseRoughness = data.MatBaseDiffuseRoughness ?? defaults.BaseDiffuseRoughness,
+                SpecularRoughness = data.MatSpecularRoughness ?? defaults.SpecularRoughness,
+                SpecularIor = data.MatSpecularIor ?? defaults.SpecularIor,
+                EmissionColor = new Vector3(
+                    data.MatEmissionColorR ?? defaults.EmissionColor.X,
+                    data.MatEmissionColorG ?? defaults.EmissionColor.Y,
+                    data.MatEmissionColorB ?? defaults.EmissionColor.Z),
+                EmissionLuminance = data.MatEmissionLuminance ?? defaults.EmissionLuminance,
+                CoatWeight = data.MatCoatWeight ?? defaults.CoatWeight,
+                CoatRoughness = data.MatCoatRoughness ?? defaults.CoatRoughness,
+                CoatIor = data.MatCoatIor ?? defaults.CoatIor,
+            };
+            target.MaterialFilePath = data.MaterialFilePath;
+        }
+        else
+        {
+            target.ActiveMaterial = null;
+            target.MaterialFilePath = null;
+        }
+        if (data.EnvIntensity.HasValue)
+            target.EnvIntensity = Math.Clamp(data.EnvIntensity.Value, 0f, 5f);
     }
 }

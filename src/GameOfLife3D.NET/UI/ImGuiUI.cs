@@ -76,6 +76,14 @@ public sealed class ImGuiUI
     private float _bloomThreshold = 0.6f;
     private float _bloomIntensity = 0.5f;
 
+    // PBR Material
+    private bool _showMaterialPopup;
+    private MaterialLibraryState _materialLibState;
+    // Rename state: index into _materialLibState.Materials being renamed, and its draft name.
+    private int _materialRenameIdx = -1;
+    private string _materialRenameDraft = "";
+    private string? _materialImportError;
+
     // Cell shape — mirrors RenderSettings.Shape; the int form drives ImGui.Combo.
     private int _shape = (int)CellShape.BeveledCube;
     private static readonly string[] ShapeNames = { "Cube", "Rounded Cube", "Tetrahedron", "Octahedron", "Pyramid", "Icosahedron", "Dodecahedron", "Sphere", "Capsule" };
@@ -122,6 +130,9 @@ public sealed class ImGuiUI
 
     private static readonly string[] GridSizes = ["25", "50", "75", "100", "150", "200"];
     private static readonly int[] GridSizeValues = [25, 50, 75, 100, 150, 200];
+
+    // Width to reserve in the material library list for the rename/remove button pair.
+    private const float MaterialLibraryButtonsReservedWidth = 56f;
     private static readonly string[] RuleNames;
     private static readonly string[] RuleKeys;
     private static readonly string AppVersion = LoadAppVersion();
@@ -177,6 +188,12 @@ public sealed class ImGuiUI
     public Action<float>? OnFontSizeChanged { get; set; }
     public Action? OnFontSizeReset { get; set; }
 
+    /// <summary>
+    /// Invoked when the active PBR material changes (load or clear).
+    /// <c>null</c> means "revert to the legacy shader".
+    /// </summary>
+    public Action<CellMaterial?>? OnMaterialChanged { get; set; }
+
     public ImGuiUI(GameEngine engine, Renderer3D renderer, CameraController camera, PatternLoader patternLoader, PatternLibrary patternLibrary, EditingController? editController = null)
     {
         _engine = engine;
@@ -185,6 +202,7 @@ public sealed class ImGuiUI
         _patternLoader = patternLoader;
         _patternLibrary = patternLibrary;
         _patternLibState = PatternLibraryState.Load();
+        _materialLibState = MaterialLibraryState.Load();
         _editController = editController;
         _timeline = new TimelineBar();
         _statusBar = new StatusBar();
@@ -511,6 +529,7 @@ public sealed class ImGuiUI
         if (_showBackgroundPopup) RenderBackgroundPopup();
         if (_showCellPaddingPopup) RenderCellPaddingPopup();
         if (_showReflectiveFloorPopup) RenderReflectiveFloorPopup();
+        if (_showMaterialPopup) RenderMaterialPopup();
         if (_showShortcutsPopup) RenderShortcutsPopup();
         if (_showAboutPopup) RenderAboutPopup();
     }
@@ -1003,6 +1022,11 @@ public sealed class ImGuiUI
 
             if (ImGui.MenuItem("Background..."))
                 _showBackgroundPopup = true;
+
+            ImGui.Separator();
+
+            if (ImGui.MenuItem("Materials (PBR)..."))
+                _showMaterialPopup = true;
 
             ImGui.EndMenu();
         }
@@ -1672,6 +1696,221 @@ public sealed class ImGuiUI
         ImGui.End();
     }
 
+    private void RenderMaterialPopup()
+    {
+        ImGui.SetNextWindowSize(new Vector2(380, 0), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("Materials (PBR)", ref _showMaterialPopup))
+        {
+            ImGui.End();
+            return;
+        }
+
+        var renderSettings = _renderer.Settings;
+        float fullWidth = ImGui.GetContentRegionAvail().X;
+        float spacing = ImGui.GetStyle().ItemSpacing.X;
+        float halfWidth = (fullWidth - spacing) * 0.5f;
+
+        // ── Active material status ────────────────────────────────────────────
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        ImGui.Text("Active Material");
+        ImGui.PopStyleColor();
+
+        if (renderSettings.ActiveMaterial != null)
+        {
+            string label = renderSettings.MaterialFilePath != null
+                ? Path.GetFileNameWithoutExtension(renderSettings.MaterialFilePath)
+                : "Custom (imported)";
+            ImGui.TextWrapped(label);
+
+            ImGui.Spacing();
+            if (UIHelpers.AccentButton("Clear Material", new Vector2(fullWidth, 0)))
+            {
+                renderSettings.ActiveMaterial = null;
+                renderSettings.MaterialFilePath = null;
+                OnMaterialChanged?.Invoke(null);
+            }
+        }
+        else
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+            ImGui.Text("None — Legacy Lambertian shader");
+            ImGui.PopStyleColor();
+        }
+
+        UIHelpers.ThinSeparator();
+
+        // ── Import buttons ────────────────────────────────────────────────────
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        ImGui.Text("Import");
+        ImGui.PopStyleColor();
+
+        if (ImGui.Button("Load .mtlx...", new Vector2(halfWidth, 0)))
+        {
+            var path = FileDialogHelper.OpenFile("mtlx");
+            if (path != null)
+                TryImportMaterial(path, renderSettings);
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Load .pbr.json...", new Vector2(halfWidth, 0)))
+        {
+            var path = FileDialogHelper.OpenFile("json");
+            if (path != null)
+                TryImportMaterial(path, renderSettings);
+        }
+
+        if (_materialImportError != null)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+            ImGui.TextWrapped(_materialImportError);
+            ImGui.PopStyleColor();
+        }
+
+        UIHelpers.ThinSeparator();
+
+        // ── IBL / environment intensity ───────────────────────────────────────
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        ImGui.Text("Environment");
+        ImGui.PopStyleColor();
+
+        float envIntensity = renderSettings.EnvIntensity;
+        ImGui.SetNextItemWidth(fullWidth);
+        if (ImGui.SliderFloat("##envintensity", ref envIntensity, 0f, 2f, "IBL Intensity: %.2f"))
+            renderSettings.EnvIntensity = envIntensity;
+
+        UIHelpers.ThinSeparator();
+
+        // ── Material library ──────────────────────────────────────────────────
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+        ImGui.Text("Library");
+        ImGui.PopStyleColor();
+
+        if (_materialLibState.Materials.Count == 0)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+            ImGui.Text("No saved materials. Load a file above to add one.");
+            ImGui.PopStyleColor();
+        }
+        else
+        {
+            ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgSurface);
+            ImGui.BeginChild("##mat-lib", new Vector2(fullWidth, 130), ImGuiChildFlags.Border);
+
+            for (int i = 0; i < _materialLibState.Materials.Count; i++)
+            {
+                var entry = _materialLibState.Materials[i];
+                ImGui.PushID(i);
+
+                if (!entry.FileExists)
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+                    ImGui.Text($"[Missing] {entry.Name}");
+                    ImGui.PopStyleColor();
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton(Icons.Trash))
+                        _materialLibState.Remove(entry.FilePath);
+                }
+                else if (_materialRenameIdx == i)
+                {
+                    // Inline rename field
+                    ImGui.SetNextItemWidth(fullWidth - MaterialLibraryButtonsReservedWidth);
+                    if (ImGui.InputText("##rename", ref _materialRenameDraft, 128,
+                            ImGuiInputTextFlags.EnterReturnsTrue))
+                    {
+                        _materialLibState.Rename(entry.FilePath, _materialRenameDraft.Trim());
+                        _materialRenameIdx = -1;
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("OK"))
+                    {
+                        _materialLibState.Rename(entry.FilePath, _materialRenameDraft.Trim());
+                        _materialRenameIdx = -1;
+                    }
+                }
+                else
+                {
+                    bool isActive = string.Equals(renderSettings.MaterialFilePath,
+                        entry.FilePath, StringComparison.OrdinalIgnoreCase);
+
+                    if (ImGui.Selectable(entry.Name, isActive,
+                            ImGuiSelectableFlags.AllowDoubleClick,
+                            new Vector2(fullWidth - MaterialLibraryButtonsReservedWidth, 0)))
+                    {
+                        if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                            TryImportMaterial(entry.FilePath, renderSettings);
+                    }
+
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton(Icons.Pencil))
+                    {
+                        _materialRenameIdx = i;
+                        _materialRenameDraft = entry.Name;
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton(Icons.Trash))
+                        _materialLibState.Remove(entry.FilePath);
+                }
+
+                ImGui.PopID();
+            }
+
+            ImGui.EndChild();
+            ImGui.PopStyleColor();
+        }
+
+        // ── Active material inspector (read-only) ─────────────────────────────
+        if (renderSettings.ActiveMaterial != null)
+        {
+            UIHelpers.ThinSeparator();
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextSecondary);
+            ImGui.Text("Inspector (read-only)");
+            ImGui.PopStyleColor();
+
+            var mat = renderSettings.ActiveMaterial;
+
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+            UIHelpers.LabelValue("Base Metalness:", $"{mat.BaseMetalness:F3}");
+            UIHelpers.LabelValue("Base Diffuse Roughness:", $"{mat.BaseDiffuseRoughness:F3}");
+            UIHelpers.LabelValue("Specular Roughness:", $"{mat.SpecularRoughness:F3}");
+            UIHelpers.LabelValue("Specular IOR:", $"{mat.SpecularIor:F3}");
+            UIHelpers.LabelValue("Emission Luminance:", $"{mat.EmissionLuminance:F3}");
+            UIHelpers.LabelValue("Coat Weight:", $"{mat.CoatWeight:F3}");
+            if (mat.CoatWeight > 0f)
+            {
+                UIHelpers.LabelValue("Coat Roughness:", $"{mat.CoatRoughness:F3}");
+                UIHelpers.LabelValue("Coat IOR:", $"{mat.CoatIor:F3}");
+            }
+            ImGui.PopStyleColor();
+        }
+
+        ImGui.End();
+    }
+
+    private void TryImportMaterial(string path, RenderSettings renderSettings)
+    {
+        _materialImportError = null;
+        var result = MaterialImporter.ImportFile(path);
+
+        if (!result.IsSuccess)
+        {
+            _materialImportError = result.Error ?? "Unknown import error.";
+            return;
+        }
+
+        renderSettings.ActiveMaterial = result.Material;
+        renderSettings.MaterialFilePath = path;
+        OnMaterialChanged?.Invoke(result.Material);
+
+        // Add to library using the file stem as default name.
+        string name = Path.GetFileNameWithoutExtension(path);
+        _materialLibState.AddOrUpdate(name, path);
+
+        if (result.UnsupportedTexturedParams.Count > 0)
+        {
+            string skipped = string.Join(", ", result.UnsupportedTexturedParams);
+            _materialImportError = $"Note: texture-connected inputs were ignored: {skipped}";
+        }
+    }
+
     private void RenderShortcutsPopup()
     {
         ImGui.SetNextWindowSize(new Vector2(320, 0), ImGuiCond.Always);
@@ -1907,5 +2146,7 @@ public sealed class ImGuiUI
         _bloomThreshold = s.BloomThreshold;
         _bloomIntensity = s.BloomIntensity;
         _shape = Math.Clamp((int)s.Shape, 0, ShapeNames.Length - 1);
+        // Clear any import error from a previous session so it doesn't persist.
+        _materialImportError = null;
     }
 }
