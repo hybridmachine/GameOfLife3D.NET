@@ -181,6 +181,7 @@ public sealed class App : IDisposable
         _ui.OnExportRLE = ExportRLE;
         _ui.OnFontSizeChanged = SetFontSizeOverride;
         _ui.OnFontSizeReset = ResetFontSizeToAutomatic;
+        _ui.OnMaterialChanged = material => _renderer!.SetMaterial(material);
         SyncFontSizeState();
 
         // Initialize cinematic controller

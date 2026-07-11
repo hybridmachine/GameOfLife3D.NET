@@ -12,6 +12,7 @@ public sealed class Renderer3D : IDisposable
 
     private readonly GL _gl;
     private ShaderProgram? _cubeShader;
+    private ShaderProgram? _pbrShader;
     private ShaderProgram? _wireframeShader;
     private ShaderProgram? _gridShader;
     private ShaderProgram? _floorShader;
@@ -81,6 +82,7 @@ public sealed class Renderer3D : IDisposable
     public void Initialize()
     {
         _cubeShader = ShaderProgram.FromEmbeddedResources(_gl, "cube.vert", "cube.frag");
+        _pbrShader = ShaderProgram.FromEmbeddedResources(_gl, "cube.vert", "pbr_cell.frag");
         _wireframeShader = ShaderProgram.FromEmbeddedResources(_gl, "wireframe.vert", "wireframe.frag");
         _gridShader = ShaderProgram.FromEmbeddedResources(_gl, "grid.vert", "grid.frag");
         _floorShader = ShaderProgram.FromEmbeddedResources(_gl, "floor.vert", "floor.frag");
@@ -120,6 +122,37 @@ public sealed class Renderer3D : IDisposable
         _gridSize = size;
         _gridRenderer?.UpdateGrid(size);
         InvalidateState();
+    }
+
+    /// <summary>
+    /// Applies a PBR material to the cell renderer. Pass <c>null</c> to
+    /// revert to the legacy Lambertian shader.
+    /// </summary>
+    public void SetMaterial(CellMaterial? material)
+    {
+        _settings.ActiveMaterial = material;
+    }
+
+    /// <summary>
+    /// Uploads the default SH L1 coefficients to the PBR shader.
+    /// sh[0] encodes the average ambient color; the remaining 8 coefficients
+    /// are zeroed which yields a uniform, direction-independent ambient term.
+    /// This is called once after initialization. When a more accurate ambient
+    /// is desired (e.g. baked from the starfield cubemap) the caller can
+    /// replace sh[0..8] via SetPbrSHCoefficients.
+    /// </summary>
+    private void UploadDefaultIblSH(float envIntensity)
+    {
+        if (_pbrShader == null) return;
+        _pbrShader.Use();
+
+        // A single ambient coefficient (L0) gives isotropic fill light.
+        // Multiply by π to match the precomputed irradiance convention used
+        // in the evalIrradianceSH GLSL function.
+        float ambient = envIntensity * 0.28f; // 1/(2√π) ≈ 0.28
+        _pbrShader.SetUniform("uIblSh[0]", new System.Numerics.Vector3(ambient, ambient, ambient));
+        for (int i = 1; i < 9; i++)
+            _pbrShader.SetUniform($"uIblSh[{i}]", System.Numerics.Vector3.Zero);
     }
 
     public void InvalidateState()
@@ -518,21 +551,50 @@ public sealed class Renderer3D : IDisposable
             _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         }
 
+        // Choose the solid-cell shader based on whether a PBR material is active.
+        // The reflection pass always uses the legacy cube shader for performance.
+        bool usePbr = _settings.ActiveMaterial != null && _pbrShader != null;
+        ShaderProgram cellShader = usePbr ? _pbrShader! : _cubeShader;
+
         // Set Y range uniforms (after BeginScene to avoid being shadowed by any
         // shader binds the background pass might do).
-        _cubeShader.Use();
-        _cubeShader.SetUniform("uMinY", _lastMinY);
-        _cubeShader.SetUniform("uMaxY", _lastMaxY);
+        cellShader.Use();
+        cellShader.SetUniform("uMinY", _lastMinY);
+        cellShader.SetUniform("uMaxY", _lastMaxY);
 
         _wireframeShader.Use();
         _wireframeShader.SetUniform("uMinY", _lastMinY);
         _wireframeShader.SetUniform("uMaxY", _lastMaxY);
 
+        // Upload PBR material uniforms and IBL state when the PBR shader is active.
+        if (usePbr)
+        {
+            var mat = _settings.ActiveMaterial!;
+            Vector3 camPos = ExtractCameraPosition(view);
+
+            _pbrShader!.Use();
+            _pbrShader.SetUniform("uCameraPos", camPos);
+            _pbrShader.SetUniform("uBaseColor", mat.BaseColor);
+            _pbrShader.SetUniform("uBaseMetalness", mat.BaseMetalness);
+            _pbrShader.SetUniform("uBaseDiffuseRoughness", mat.BaseDiffuseRoughness);
+            _pbrShader.SetUniform("uSpecularRoughness", Math.Max(mat.SpecularRoughness, 0.02f));
+            _pbrShader.SetUniform("uSpecularIor", mat.SpecularIor);
+            _pbrShader.SetUniform("uEmissionColor", mat.EmissionColor);
+            _pbrShader.SetUniform("uEmissionLuminance", mat.EmissionLuminance);
+            _pbrShader.SetUniform("uCoatWeight", mat.CoatWeight);
+            _pbrShader.SetUniform("uCoatRoughness", Math.Max(mat.CoatRoughness, 0.02f));
+            _pbrShader.SetUniform("uCoatIor", mat.CoatIor);
+            _pbrShader.SetUniform("uEnvIntensity", _settings.EnvIntensity);
+
+            // Upload SH IBL coefficients scaled to the current env intensity.
+            UploadDefaultIblSH(_settings.EnvIntensity);
+        }
+
         // Render solid cubes
         _gl.Enable(EnableCap.DepthTest);
         _gl.Enable(EnableCap.Blend);
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-        _instancedRenderer.RenderSolid(_cubeShader, view, proj, time, _settings);
+        _instancedRenderer.RenderSolid(cellShader, view, proj, time, _settings);
         _gl.Disable(EnableCap.Blend);
 
         // Render wireframe
@@ -623,6 +685,7 @@ public sealed class Renderer3D : IDisposable
         _gridRenderer?.Dispose();
         _floorRenderer?.Dispose();
         _cubeShader?.Dispose();
+        _pbrShader?.Dispose();
         _wireframeShader?.Dispose();
         _gridShader?.Dispose();
         _floorShader?.Dispose();
