@@ -61,8 +61,11 @@ vec2 envBrdfApprox(float NdotV, float roughness)
 vec3 specularAmbient(vec3 F0, float NdotV, float roughness)
 {
     vec2 brdf = envBrdfApprox(NdotV, roughness);
-    // Reflected radiance from the SH in the mirror direction (R = reflect(-V, N))
-    // is approximated here by the DC term (index 0) scaled for specular.
-    vec3 envColor = uIblSh[0] * 2.0;  // rough estimate: mirror = 2× ambient
+    // The reflected radiance from the environment in the view-reflection direction
+    // is approximated by scaling the SH DC term (average ambient) by 2. This
+    // assumes the glossy lobe energy is roughly twice the hemispherical average
+    // for an isotropic environment — a common approximation for hero reflections
+    // in PBR renderers where no mip-convolved cubemap is available.
+    vec3 envColor = uIblSh[0] * 2.0;
     return envColor * (F0 * brdf.x + brdf.y);
 }

@@ -124,9 +124,9 @@ void main()
     }
 
     // ── Indirect / ambient (IBL) ──────────────────────────────────────────────
-    vec3 iblDiffuse  = evalIrradianceSH(N) * baseColor * (1.0 - uBaseMetalness) * uEnvIntensity;
+    vec3 ambientDiffuse = evalIrradianceSH(N) * baseColor * (1.0 - uBaseMetalness) * uEnvIntensity;
     vec3 iblSpecular = specularAmbient(F0, NdotV, uSpecularRoughness) * uEnvIntensity;
-    vec3 ambient     = iblDiffuse + iblSpecular;
+    vec3 ambient     = ambientDiffuse + iblSpecular;
 
     // ── Emission ──────────────────────────────────────────────────────────────
     vec3 emission = uEmissionColor * uEmissionLuminance;

@@ -46,6 +46,8 @@ public sealed class Renderer3D : IDisposable
     // lazily allocated staging buffer on a worker task; the render thread
     // keeps drawing the stale buffer, then swaps + uploads on completion.
     private const int BackgroundRebuildThreshold = 250_000;
+    // Minimum clamped roughness for GGX to avoid specular singularities at r=0.
+    private const float MinRoughness = 0.02f;
     private Task<RebuildJobResult>? _rebuildJob;
     private InstanceData[]? _stagingBuffer;
     // Bumped by InvalidateState so an in-flight job computed from content
@@ -134,22 +136,24 @@ public sealed class Renderer3D : IDisposable
     }
 
     /// <summary>
-    /// Uploads the default SH L1 coefficients to the PBR shader.
-    /// sh[0] encodes the average ambient color; the remaining 8 coefficients
-    /// are zeroed which yields a uniform, direction-independent ambient term.
-    /// This is called once after initialization. When a more accurate ambient
-    /// is desired (e.g. baked from the starfield cubemap) the caller can
-    /// replace sh[0..8] via SetPbrSHCoefficients.
+    /// Uploads default SH L1 coefficients to the PBR shader. sh[0] (the DC /
+    /// L0 term) encodes the average ambient color; the remaining 8 coefficients
+    /// are zeroed, giving a uniform, direction-independent ambient contribution.
+    ///
+    /// The scale factor 0.28 ≈ 1/(2√π) converts from an average radiance to the
+    /// L0 SH coefficient in the Ramamoorthi &amp; Hanrahan irradiance basis used
+    /// by <c>evalIrradianceSH</c> in ibl.glsl.
+    ///
+    /// A later revision can replace this with actual SH baked from the starfield
+    /// cubemap via <c>SetPbrSHCoefficients</c> without any shader API changes.
     /// </summary>
     private void UploadDefaultIblSH(float envIntensity)
     {
         if (_pbrShader == null) return;
         _pbrShader.Use();
 
-        // A single ambient coefficient (L0) gives isotropic fill light.
-        // Multiply by π to match the precomputed irradiance convention used
-        // in the evalIrradianceSH GLSL function.
-        float ambient = envIntensity * 0.28f; // 1/(2√π) ≈ 0.28
+        // 1/(2√π) ≈ 0.28: converts average radiance to L0 SH coefficient.
+        float ambient = envIntensity * 0.28f;
         _pbrShader.SetUniform("uIblSh[0]", new System.Numerics.Vector3(ambient, ambient, ambient));
         for (int i = 1; i < 9; i++)
             _pbrShader.SetUniform($"uIblSh[{i}]", System.Numerics.Vector3.Zero);
@@ -577,12 +581,12 @@ public sealed class Renderer3D : IDisposable
             _pbrShader.SetUniform("uBaseColor", mat.BaseColor);
             _pbrShader.SetUniform("uBaseMetalness", mat.BaseMetalness);
             _pbrShader.SetUniform("uBaseDiffuseRoughness", mat.BaseDiffuseRoughness);
-            _pbrShader.SetUniform("uSpecularRoughness", Math.Max(mat.SpecularRoughness, 0.02f));
+            _pbrShader.SetUniform("uSpecularRoughness", Math.Max(mat.SpecularRoughness, MinRoughness));
             _pbrShader.SetUniform("uSpecularIor", mat.SpecularIor);
             _pbrShader.SetUniform("uEmissionColor", mat.EmissionColor);
             _pbrShader.SetUniform("uEmissionLuminance", mat.EmissionLuminance);
             _pbrShader.SetUniform("uCoatWeight", mat.CoatWeight);
-            _pbrShader.SetUniform("uCoatRoughness", Math.Max(mat.CoatRoughness, 0.02f));
+            _pbrShader.SetUniform("uCoatRoughness", Math.Max(mat.CoatRoughness, MinRoughness));
             _pbrShader.SetUniform("uCoatIor", mat.CoatIor);
             _pbrShader.SetUniform("uEnvIntensity", _settings.EnvIntensity);
 

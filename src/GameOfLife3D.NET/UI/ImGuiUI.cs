@@ -130,6 +130,9 @@ public sealed class ImGuiUI
 
     private static readonly string[] GridSizes = ["25", "50", "75", "100", "150", "200"];
     private static readonly int[] GridSizeValues = [25, 50, 75, 100, 150, 200];
+
+    // Width to reserve in the material library list for the rename/remove button pair.
+    private const float MaterialLibraryButtonsReservedWidth = 56f;
     private static readonly string[] RuleNames;
     private static readonly string[] RuleKeys;
     private static readonly string AppVersion = LoadAppVersion();
@@ -1806,7 +1809,7 @@ public sealed class ImGuiUI
                 else if (_materialRenameIdx == i)
                 {
                     // Inline rename field
-                    ImGui.SetNextItemWidth(fullWidth - 56f);
+                    ImGui.SetNextItemWidth(fullWidth - MaterialLibraryButtonsReservedWidth);
                     if (ImGui.InputText("##rename", ref _materialRenameDraft, 128,
                             ImGuiInputTextFlags.EnterReturnsTrue))
                     {
@@ -1827,7 +1830,7 @@ public sealed class ImGuiUI
 
                     if (ImGui.Selectable(entry.Name, isActive,
                             ImGuiSelectableFlags.AllowDoubleClick,
-                            new Vector2(fullWidth - 56f, 0)))
+                            new Vector2(fullWidth - MaterialLibraryButtonsReservedWidth, 0)))
                     {
                         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                             TryImportMaterial(entry.FilePath, renderSettings);

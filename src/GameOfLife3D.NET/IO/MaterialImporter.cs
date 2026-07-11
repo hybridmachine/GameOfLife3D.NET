@@ -111,7 +111,7 @@ public static class MaterialImporter
         CellMaterial mat = CellMaterial.Default;
         mat = mat with
         {
-            BaseColor = ReadColor3(inputs, isOpenPbr ? "base_color" : "base_color",
+            BaseColor = ReadColor3(inputs, "base_color",
                 mat.BaseColor, textured),
             BaseMetalness = ReadFloat(inputs, isOpenPbr ? "base_metalness" : "metalness",
                 mat.BaseMetalness, textured),
@@ -122,7 +122,7 @@ public static class MaterialImporter
                 mat.SpecularRoughness, textured),
             SpecularIor = ReadFloat(inputs, isOpenPbr ? "specular_ior" : "specular_IOR",
                 mat.SpecularIor, textured),
-            EmissionColor = ReadColor3(inputs, isOpenPbr ? "emission_color" : "emission_color",
+            EmissionColor = ReadColor3(inputs, "emission_color",
                 mat.EmissionColor, textured),
             EmissionLuminance = ReadFloat(inputs,
                 isOpenPbr ? "emission_luminance" : "emission",
