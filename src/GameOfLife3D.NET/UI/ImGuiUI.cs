@@ -966,6 +966,11 @@ public sealed class ImGuiUI
 
         if (ImGui.BeginMenu("Colors"))
         {
+            bool hasMaterial = settings.ActiveMaterial != null;
+
+            // Color cycling is mutually exclusive with PBR materials — the
+            // material's base_color and lighting define the cell appearance.
+            if (hasMaterial) ImGui.BeginDisabled();
             if (ImGui.MenuItem("Face Color Cycling", "", _faceColorCycling))
             {
                 _faceColorCycling = !_faceColorCycling;
@@ -981,6 +986,14 @@ public sealed class ImGuiUI
             {
                 if (ImGui.MenuItem("Cell Color..."))
                     _showCellColorPopup = true;
+            }
+            if (hasMaterial) ImGui.EndDisabled();
+
+            if (hasMaterial)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
+                ImGui.Text("Overridden by material");
+                ImGui.PopStyleColor();
             }
 
             if (_showWireframe)
@@ -1898,6 +1911,8 @@ public sealed class ImGuiUI
 
         renderSettings.ActiveMaterial = result.Material;
         renderSettings.MaterialFilePath = path;
+        renderSettings.FaceColorCycling = false;
+        _faceColorCycling = false;
         OnMaterialChanged?.Invoke(result.Material);
 
         // Add to library using the file stem as default name.

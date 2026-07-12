@@ -67,17 +67,10 @@ void main()
 
     bool isPreview = vGenerationT < 0.0;
 
-    // ── Base color from gradient or solid ─────────────────────────────────────
-    vec3 gradientColor;
-    if (isPreview)
-        gradientColor = vec3(0.0, 1.0, 0.7);
-    else if (uColorCycling)
-        gradientColor = computeGradientColor(vWorldPosition.y, uMinY, uMaxY, uTime);
-    else
-        gradientColor = uSolidColor;
-
-    // Material base_color modulates the gradient tint.
-    vec3 baseColor = uBaseColor * gradientColor;
+    // ── Base color ─────────────────────────────────────────────────────────────
+    // A PBR material's base_color and lighting alone define the cell — color
+    // cycling is ignored. Preview cells keep their teal tint for legibility.
+    vec3 baseColor = isPreview ? vec3(0.0, 1.0, 0.7) : uBaseColor;
 
     // ── PBR vectors ───────────────────────────────────────────────────────────
     vec3 N = normalize(vNormal);
