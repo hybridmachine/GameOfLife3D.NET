@@ -159,6 +159,35 @@ public sealed class Renderer3D : IDisposable
             _pbrShader.SetUniform($"uIblSh[{i}]", System.Numerics.Vector3.Zero);
     }
 
+    /// <summary>
+    /// Uploads the active OpenPBR material uniforms and default IBL state to
+    /// <see cref="_pbrShader"/>. Shared by the reflection and main-scene passes
+    /// so the material appears identically in the water mirror; the caller
+    /// supplies the appropriate world-space camera position (mirrored across
+    /// the floor for the reflection pass).
+    /// </summary>
+    private void UploadPbrMaterialUniforms(Vector3 camPos)
+    {
+        if (_pbrShader == null) return;
+        var mat = _settings.ActiveMaterial!;
+
+        _pbrShader.Use();
+        _pbrShader.SetUniform("uCameraPos", camPos);
+        _pbrShader.SetUniform("uBaseColor", mat.BaseColor);
+        _pbrShader.SetUniform("uBaseMetalness", mat.BaseMetalness);
+        _pbrShader.SetUniform("uBaseDiffuseRoughness", mat.BaseDiffuseRoughness);
+        _pbrShader.SetUniform("uSpecularRoughness", Math.Max(mat.SpecularRoughness, MinRoughness));
+        _pbrShader.SetUniform("uSpecularIor", mat.SpecularIor);
+        _pbrShader.SetUniform("uEmissionColor", mat.EmissionColor);
+        _pbrShader.SetUniform("uEmissionLuminance", mat.EmissionLuminance);
+        _pbrShader.SetUniform("uCoatWeight", mat.CoatWeight);
+        _pbrShader.SetUniform("uCoatRoughness", Math.Max(mat.CoatRoughness, MinRoughness));
+        _pbrShader.SetUniform("uCoatIor", mat.CoatIor);
+        _pbrShader.SetUniform("uEnvIntensity", _settings.EnvIntensity);
+
+        UploadDefaultIblSH();
+    }
+
     public void InvalidateState()
     {
         _lastDisplayStart = -1;
@@ -530,12 +559,22 @@ public sealed class Renderer3D : IDisposable
 
             Matrix4x4 mirroredView = ReflectiveFloorRenderer.MirrorViewAcrossFloor(view);
 
-            _cubeShader.Use();
-            _cubeShader.SetUniform("uMinY", _lastMinY);
-            _cubeShader.SetUniform("uMaxY", _lastMaxY);
+            // Mirror the active OpenPBR material into the water by rendering the
+            // reflection pass with the same shader as the main scene. The plain
+            // cube mesh is still used (ripples hide the detail) and the existing
+            // resolution/instance-count guards above bound the extra PBR cost.
+            bool usePbrReflection = _settings.ActiveMaterial != null && _pbrShader != null;
+            ShaderProgram reflectionShader = usePbrReflection ? _pbrShader! : _cubeShader;
+
+            reflectionShader.Use();
+            reflectionShader.SetUniform("uMinY", _lastMinY);
+            reflectionShader.SetUniform("uMaxY", _lastMaxY);
+
+            if (usePbrReflection)
+                UploadPbrMaterialUniforms(ExtractCameraPosition(mirroredView));
 
             _gl.Enable(EnableCap.DepthTest);
-            _instancedRenderer.RenderSolid(_cubeShader, mirroredView, proj, time, _settings, CellShape.Cube);
+            _instancedRenderer.RenderSolid(reflectionShader, mirroredView, proj, time, _settings, CellShape.Cube);
 
             _floorRenderer.EndReflectionPass();
         }
@@ -555,8 +594,6 @@ public sealed class Renderer3D : IDisposable
             _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         }
 
-        // Choose the solid-cell shader based on whether a PBR material is active.
-        // The reflection pass always uses the legacy cube shader for performance.
         bool usePbr = _settings.ActiveMaterial != null && _pbrShader != null;
         ShaderProgram cellShader = usePbr ? _pbrShader! : _cubeShader;
 
@@ -570,29 +607,8 @@ public sealed class Renderer3D : IDisposable
         _wireframeShader.SetUniform("uMinY", _lastMinY);
         _wireframeShader.SetUniform("uMaxY", _lastMaxY);
 
-        // Upload PBR material uniforms and IBL state when the PBR shader is active.
         if (usePbr)
-        {
-            var mat = _settings.ActiveMaterial!;
-            Vector3 camPos = ExtractCameraPosition(view);
-
-            _pbrShader!.Use();
-            _pbrShader.SetUniform("uCameraPos", camPos);
-            _pbrShader.SetUniform("uBaseColor", mat.BaseColor);
-            _pbrShader.SetUniform("uBaseMetalness", mat.BaseMetalness);
-            _pbrShader.SetUniform("uBaseDiffuseRoughness", mat.BaseDiffuseRoughness);
-            _pbrShader.SetUniform("uSpecularRoughness", Math.Max(mat.SpecularRoughness, MinRoughness));
-            _pbrShader.SetUniform("uSpecularIor", mat.SpecularIor);
-            _pbrShader.SetUniform("uEmissionColor", mat.EmissionColor);
-            _pbrShader.SetUniform("uEmissionLuminance", mat.EmissionLuminance);
-            _pbrShader.SetUniform("uCoatWeight", mat.CoatWeight);
-            _pbrShader.SetUniform("uCoatRoughness", Math.Max(mat.CoatRoughness, MinRoughness));
-            _pbrShader.SetUniform("uCoatIor", mat.CoatIor);
-            _pbrShader.SetUniform("uEnvIntensity", _settings.EnvIntensity);
-
-            // Environment intensity is applied by the shader to both IBL lobes.
-            UploadDefaultIblSH();
-        }
+            UploadPbrMaterialUniforms(ExtractCameraPosition(view));
 
         // Render solid cubes
         _gl.Enable(EnableCap.DepthTest);
