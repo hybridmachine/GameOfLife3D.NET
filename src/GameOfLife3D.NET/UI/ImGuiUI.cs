@@ -1911,7 +1911,6 @@ public sealed class ImGuiUI
 
         renderSettings.ActiveMaterial = result.Material;
         renderSettings.MaterialFilePath = path;
-        renderSettings.FaceColorCycling = false;
         _faceColorCycling = false;
         OnMaterialChanged?.Invoke(result.Material);
 

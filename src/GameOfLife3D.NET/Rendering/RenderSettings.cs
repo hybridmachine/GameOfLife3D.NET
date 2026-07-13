@@ -86,9 +86,22 @@ public sealed class RenderSettings
     // pattern loads. 1.0 = fully opaque (normal rendering).
     public float GlobalAlpha { get; set; } = 1f;
 
+    private CellMaterial? _activeMaterial;
+
     // PBR material — when non-null the PBR shader is used instead of the
-    // legacy Lambertian cube shader.
-    public CellMaterial? ActiveMaterial { get; set; }
+    // legacy Lambertian cube shader. Assigning a material also clears
+    // FaceColorCycling: the material's base_color and lighting alone define
+    // the cell appearance, so the two are mutually exclusive.
+    public CellMaterial? ActiveMaterial
+    {
+        get => _activeMaterial;
+        set
+        {
+            _activeMaterial = value;
+            if (value is not null)
+                FaceColorCycling = false;
+        }
+    }
 
     /// <summary>
     /// Path of the file that was imported to produce <see cref="ActiveMaterial"/>.
