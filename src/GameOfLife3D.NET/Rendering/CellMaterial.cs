@@ -14,6 +14,10 @@ namespace GameOfLife3D.NET.Rendering;
 /// <list type="bullet">
 ///   <item><c>transmission_weight</c> and subsurface — require order-independent
 ///   transparency / SSS infrastructure, a poor fit for millions of instanced cells.</item>
+///   <item><c>geometry_opacity</c> is alpha-blended without sorting or OIT
+///   (depth writes stay on, cells draw in generation order) and renders opaque
+///   in the reflection pass — fine for subtle fade effects, not for true
+///   translucent layering.</item>
 ///   <item>Anisotropy tangent frame — derived from the object-space X axis
 ///   instead of per-shape authored tangents.</item>
 ///   <item>Texture mapping uses shader-side triplanar projection of the
@@ -74,7 +78,7 @@ public sealed record CellMaterial
     /// <summary>Clearcoat blend weight (0 = disabled).</summary>
     public float CoatWeight { get; init; } = 0f;
 
-    /// <summary>Tint applied to coat reflection and absorption (coat_color).</summary>
+    /// <summary>Tint applied to coat reflection (coat_color). The coat_darkening absorption is not tinted.</summary>
     public Vector3 CoatColor { get; init; } = Vector3.One;
 
     /// <summary>Clearcoat GGX roughness.</summary>
@@ -88,7 +92,7 @@ public sealed record CellMaterial
 
     /// <summary>
     /// Darkening of the base layer under the coat at grazing angles
-    /// (coat_darkening, 1 = full artistic darkening, 0 = none).
+    /// (coat_darkening, 1 = full physical darkening, 0 = none).
     /// </summary>
     public float CoatDarkening { get; init; } = 1f;
 

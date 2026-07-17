@@ -69,7 +69,7 @@ uniform float uThinFilmIor;          // film IOR
 uniform float uGeometryOpacity;      // opacity multiplier (1 = opaque)
 uniform float uTextureScale;         // triplanar tiling (1 = one repeat per cell)
 
-// ── Material textures (fixed units 4–9; 0–3 are background/composite) ────────
+// ── Material textures (fixed units 4–9; 0–1 are background/composite) ────────
 // Texture semantics are constant × textureSample — the constant acts as a
 // tint/scale, and the importer promotes non-identity defaults (scalars to 1,
 // emission_color to white) when a texture is connected.
@@ -195,8 +195,9 @@ void main()
                                      NdotL, NdotV, LdotV,
                                      uBaseDiffuseRoughness);
 
-    // Light is white with implicit unit intensity.
-    vec3 directLight = (directDiffuse + directSpecular) * NdotL * uBaseWeight;
+    // Light is white with implicit unit intensity. base_weight scales only
+    // the base (diffuse) lobe; the specular lobe carries its own weight.
+    vec3 directLight = (directDiffuse * uBaseWeight + directSpecular) * NdotL;
 
     // ── Fuzz (sheen) lobe ─────────────────────────────────────────────────────
     // Charlie distribution + Ashikhmin visibility. Energy compensation uses a
@@ -226,11 +227,10 @@ void main()
                 uCoatRoughness, coatF0);
         float coatFresnel = fresnelSchlickScalar(VdotH, coatF0Scalar);
 
-        // Attenuate the base by (1 - coatFresnel * coatWeight) and add coat
-        // specular. coat_darkening adds an artistic extra darkening of the
-        // base under the coat at grazing angles.
-        float darkening = mix(1.0, 1.0 - coatFresnel, uCoatDarkening);
-        directLight *= (1.0 - uCoatWeight * coatFresnel) * darkening;
+        // Attenuate the base by the coat's Fresnel transmittance and add coat
+        // specular. coat_darkening scales that attenuation (OpenPBR):
+        // 0 = no darkening, 1 = full physical darkening.
+        directLight *= mix(1.0, 1.0 - uCoatWeight * coatFresnel, uCoatDarkening);
         directLight += coatSpec * NdotL * uCoatWeight;
     }
 

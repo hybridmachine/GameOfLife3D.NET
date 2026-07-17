@@ -3,8 +3,8 @@
      Image-node connections resolve to textures next to this file (generated
      by generate.py); geometry_normal goes through one <normalmap> hop.
      Texture semantics are constant x textureSample: texture-connected scalar
-     inputs with non-identity defaults (base_metalness, specular_roughness,
-     geometry_opacity) are promoted to 1 so the texture reads through. -->
+     inputs with non-identity defaults (base_metalness, specular_roughness)
+     are promoted to 1 so the texture reads through. -->
 <materialx version="1.38">
   <image name="img_albedo" type="color3">
     <input name="file" type="filename" value="checker_albedo.png"/>

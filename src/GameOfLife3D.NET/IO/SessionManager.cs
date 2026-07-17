@@ -501,6 +501,7 @@ public static class SessionManager
                 EmissionTexture = data.MatEmissionTexture,
                 OpacityTexture = data.MatOpacityTexture,
             };
+            target.ActiveMaterial = DropMissingMaterialTextures(target.ActiveMaterial);
             target.MaterialFilePath = data.MaterialFilePath;
         }
         else
@@ -510,5 +511,51 @@ public static class SessionManager
         }
         if (data.EnvIntensity.HasValue)
             target.EnvIntensity = Math.Clamp(data.EnvIntensity.Value, 0f, 5f);
+    }
+
+    /// <summary>
+    /// Drops material texture slots whose image file no longer exists (the
+    /// session outlived its textures), logging each drop to stderr. When a
+    /// dropped slot's constant still holds the value the importer's
+    /// constant-promotion rule would have produced (metalness/roughness 1,
+    /// emission white), the constant is reset to the material default — the
+    /// same fallback the importer applies at import time — so a missing
+    /// texture can't silently turn the surface fully metallic, mirror-smooth,
+    /// or emissive.
+    /// </summary>
+    private static CellMaterial DropMissingMaterialTextures(CellMaterial mat)
+    {
+        var defaults = CellMaterial.Default;
+
+        (string? Path, bool Dropped) Check(string? path, string inputName)
+        {
+            if (path is null || File.Exists(path)) return (path, false);
+            Console.Error.WriteLine(
+                $"SessionManager: material texture for {inputName} not found, using constant: {path}");
+            return (null, true);
+        }
+
+        var (baseColorTex, _) = Check(mat.BaseColorTexture, "base_color");
+        var (metalnessTex, metalnessDropped) = Check(mat.MetalnessTexture, "base_metalness");
+        var (roughnessTex, roughnessDropped) = Check(mat.RoughnessTexture, "specular_roughness");
+        var (normalTex, _) = Check(mat.NormalTexture, "geometry_normal");
+        var (emissionTex, emissionDropped) = Check(mat.EmissionTexture, "emission_color");
+        var (opacityTex, _) = Check(mat.OpacityTexture, "geometry_opacity");
+
+        return mat with
+        {
+            BaseColorTexture = baseColorTex,
+            MetalnessTexture = metalnessTex,
+            BaseMetalness = metalnessDropped && mat.BaseMetalness == 1f
+                ? defaults.BaseMetalness : mat.BaseMetalness,
+            RoughnessTexture = roughnessTex,
+            SpecularRoughness = roughnessDropped && mat.SpecularRoughness == 1f
+                ? defaults.SpecularRoughness : mat.SpecularRoughness,
+            NormalTexture = normalTex,
+            EmissionTexture = emissionTex,
+            EmissionColor = emissionDropped && mat.EmissionColor == Vector3.One
+                ? defaults.EmissionColor : mat.EmissionColor,
+            OpacityTexture = opacityTex,
+        };
     }
 }

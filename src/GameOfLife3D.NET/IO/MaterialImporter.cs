@@ -44,9 +44,9 @@ public sealed class MaterialImportResult
 /// <para>
 /// Texture semantics are <c>constant × textureSample</c>: when an input
 /// whose default is not the multiplicative identity
-/// (<c>base_metalness</c>, <c>specular_roughness</c>, <c>geometry_opacity</c>,
-/// <c>emission_color</c>) is texture-connected, the constant is promoted to
-/// the identity (1 / white) so the texture reads through unchanged.
+/// (<c>base_metalness</c>, <c>specular_roughness</c>, <c>emission_color</c>)
+/// is texture-connected, the constant is promoted to the identity (1 /
+/// white) so the texture reads through unchanged.
 /// </para>
 ///
 /// <para>
@@ -302,8 +302,8 @@ public static class MaterialImporter
 
         /// <summary>
         /// Constant-promotion rule: a texture-connected scalar whose default is
-        /// not the multiplicative identity (metalness 0, roughness 0.3,
-        /// opacity 1) is promoted to 1 so the texture reads through unchanged.
+        /// not the multiplicative identity (metalness 0, roughness 0.3) is
+        /// promoted to 1 so the texture reads through unchanged.
         /// </summary>
         public ScalarRead PromotedOnTexture() => Texture != null ? new(1f, Texture) : this;
     }
