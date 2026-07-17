@@ -13,11 +13,15 @@ out vec3 vWorldPosition;
 out vec3 vNormal;
 out float vGenerationT;
 out float vViewDistance;
+// Object-space position (pre-scale) for triplanar texture projection in
+// pbr_cell.frag. Harmless for shaders that don't declare the matching input.
+out vec3 vLocalPosition;
 
 void main()
 {
     vec3 worldPos = aPosition * uCellSize + aInstancePosition;
     vWorldPosition = worldPos;
+    vLocalPosition = aPosition;
     vNormal = aNormal;
     vGenerationT = aGenerationT;
 

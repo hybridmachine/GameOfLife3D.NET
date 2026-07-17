@@ -8,6 +8,7 @@ GameOfLife3D.NET is a .NET 10 desktop app using Silk.NET, OpenGL 3.3, and ImGui.
 - `Engine/` contains Game of Life rules, pattern loading, generation state, and preset rules.
 - `Rendering/`, `Shaders/`, and `Camera/` handle OpenGL rendering, embedded GLSL resources, and camera/flythrough behavior.
 - `UI/`, `Editing/`, `IO/`, and `Recording/` contain ImGui controls, interactive editing, persistence/export, and ffmpeg recording support.
+- PBR materials support texture maps via shader-side triplanar projection: `IO/MaterialImporter.cs` resolves `.mtlx` image-node connections and `.pbr.json` texture paths, and `Rendering/MaterialTextureCache.cs` loads/caches them; sample materials live in `resources/materials/` (regenerate textures with `./.venv/bin/python resources/materials/generate.py`).
 - `resources/` stores bundled images and `.rle` patterns; `signing/` stores packaging and signing scripts.
 
 There is currently no dedicated test project.

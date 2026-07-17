@@ -57,6 +57,7 @@ Program.cs → App.cs (orchestrator, ~870 lines: window/input/loop, mode toggles
     │   │                               pass skipped above 500k instances
     │   ├── PostProcessPipeline       → HDR offscreen → tone-map composite
     │   ├── BloomEffect               → Bright-pass + separable blur + composite
+    │   ├── MaterialTextureCache      → PBR texture load/cache, fixed units 4–9
     │   ├── TextRenderer              → Gen labels via ImGui foreground draw list
     │   └── ShaderProgram             → Embedded .vert/.frag with `#include` glsl
     ├── Recording/
@@ -67,6 +68,7 @@ Program.cs → App.cs (orchestrator, ~870 lines: window/input/loop, mode toggles
     │   ├── SessionManager.cs         → Versioned JSON (game + camera + render)
     │   ├── UiSettingsState.cs        → Persisted UI prefs (font size, etc.)
     │   ├── PatternLibraryState.cs    → User pattern library on disk
+    │   ├── MaterialImporter.cs       → OpenPBR .mtlx/.pbr.json → CellMaterial
     │   ├── FfmpegEncoder.cs          → Spawns ffmpeg, pipes raw frames
     │   ├── ScreenshotCapture.cs      → glReadPixels → PNG via StbImageSharp
     │   ├── ModelExporter.cs          → Mesh export
@@ -81,6 +83,7 @@ Program.cs → App.cs (orchestrator, ~870 lines: window/input/loop, mode toggles
 
 - **Math**: `System.Numerics` (`Vector3`, `Matrix4x4`) for SIMD.
 - **Shaders**: `Shaders/*.{vert,frag,glsl}` are `EmbeddedResource`s. `ShaderProgram.LoadEmbeddedResource` resolves `#include "filename"` directives so `gradient.glsl`, `water_normal.glsl` can be shared.
+- **PBR materials**: `MaterialImporter` reads OpenPBR `.mtlx` / `.pbr.json` into `CellMaterial`; `Renderer3D.UploadPbrMaterialUniforms` feeds `pbr_cell.frag` for both the main and reflection passes. Texture maps load through `MaterialTextureCache` (fixed units 4–9) and are projected shader-side via triplanar mapping (`triplanar.glsl`, no mesh UVs); semantics are constant × sample, with non-identity constants promoted to 1/white when a texture connects. Sample materials live in `resources/materials/` (regenerate textures with `./.venv/bin/python resources/materials/generate.py`).
 - **Embedded assets**: `resources/2k_stars_milky_way.jpg` (skybox), `resources/patterns/*.rle`, and `Fonts/fa-solid-900.ttf` are linked into the assembly via `EmbeddedResource Link=...` in the .csproj.
 - **Instance buffer**: pre-allocated 4M-cell VBO; `BufferSubData` per upload; dirty flags on `Renderer3D` (`_lastDisplayStart/End`, `_lastGenerationCount`) avoid redundant GPU uploads.
 - **LOD threshold**: above 500k instances, the renderer swaps high-poly shapes for cheaper ones (beveled cube→cube, sphere→icosahedron, capsule→octahedron, dodecahedron→cube via `CellMeshGeometryFactory.ResolveRenderShape`), skips the reflective floor pass, and drops bloom to 1/8-res/4-pass — keep these consumers of `CellMeshGeometryFactory.BeveledCubeRenderFallbackThreshold` in sync. Below 500k the reflection pass also auto-steps its resolution down at 100k/250k instances and always renders reflections with the plain cube mesh.
