@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!-- Sample OpenPBR MaterialX material for GameOfLife3D.NET.
+     Image-node connections resolve to textures next to this file (generated
+     by generate.py); geometry_normal goes through one <normalmap> hop.
+     Texture semantics are constant x textureSample: texture-connected scalar
+     inputs with non-identity defaults (base_metalness, specular_roughness,
+     geometry_opacity) are promoted to 1 so the texture reads through. -->
+<materialx version="1.38">
+  <image name="img_albedo" type="color3">
+    <input name="file" type="filename" value="checker_albedo.png"/>
+  </image>
+  <image name="img_roughness" type="float">
+    <input name="file" type="filename" value="checker_roughness.png"/>
+  </image>
+  <image name="img_normal" type="vector3">
+    <input name="file" type="filename" value="checker_normal.png"/>
+  </image>
+  <normalmap name="nm_normal" type="vector3">
+    <input name="in" type="vector3" nodename="img_normal"/>
+  </normalmap>
+  <open_pbr_surface name="CheckerSurf" type="surfaceshader">
+    <input name="base_color" type="color3" nodename="img_albedo"/>
+    <input name="specular_roughness" type="float" nodename="img_roughness"/>
+    <input name="specular_ior" type="float" value="1.5"/>
+    <input name="geometry_normal" type="vector3" nodename="nm_normal"/>
+    <input name="fuzz_weight" type="float" value="0.25"/>
+    <input name="thin_film_weight" type="float" value="0.35"/>
+    <input name="thin_film_thickness" type="float" value="400.0"/>
+    <input name="thin_film_ior" type="float" value="1.33"/>
+  </open_pbr_surface>
+  <material name="Checker">
+    <input name="surfaceshader" type="surfaceshader" nodename="CheckerSurf"/>
+  </material>
+</materialx>

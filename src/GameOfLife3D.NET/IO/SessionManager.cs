@@ -119,6 +119,34 @@ public sealed class RenderSessionData
     public float? MatCoatWeight { get; set; }
     public float? MatCoatRoughness { get; set; }
     public float? MatCoatIor { get; set; }
+    public float? MatBaseWeight { get; set; }
+    public float? MatSpecularWeight { get; set; }
+    public float? MatSpecularColorR { get; set; }
+    public float? MatSpecularColorG { get; set; }
+    public float? MatSpecularColorB { get; set; }
+    public float? MatSpecularAnisotropy { get; set; }
+    public float? MatCoatColorR { get; set; }
+    public float? MatCoatColorG { get; set; }
+    public float? MatCoatColorB { get; set; }
+    public float? MatCoatAnisotropy { get; set; }
+    public float? MatCoatDarkening { get; set; }
+    public float? MatFuzzWeight { get; set; }
+    public float? MatFuzzColorR { get; set; }
+    public float? MatFuzzColorG { get; set; }
+    public float? MatFuzzColorB { get; set; }
+    public float? MatFuzzRoughness { get; set; }
+    public float? MatThinFilmWeight { get; set; }
+    public float? MatThinFilmThickness { get; set; }
+    public float? MatThinFilmIor { get; set; }
+    public float? MatGeometryOpacity { get; set; }
+    public float? MatTextureScale { get; set; }
+    // Texture slots: absolute file paths, null = constant only.
+    public string? MatBaseColorTexture { get; set; }
+    public string? MatMetalnessTexture { get; set; }
+    public string? MatRoughnessTexture { get; set; }
+    public string? MatNormalTexture { get; set; }
+    public string? MatEmissionTexture { get; set; }
+    public string? MatOpacityTexture { get; set; }
     public float? EnvIntensity { get; set; }
 }
 
@@ -239,6 +267,33 @@ public static class SessionManager
         MatCoatWeight = s.ActiveMaterial?.CoatWeight,
         MatCoatRoughness = s.ActiveMaterial?.CoatRoughness,
         MatCoatIor = s.ActiveMaterial?.CoatIor,
+        MatBaseWeight = s.ActiveMaterial?.BaseWeight,
+        MatSpecularWeight = s.ActiveMaterial?.SpecularWeight,
+        MatSpecularColorR = s.ActiveMaterial?.SpecularColor.X,
+        MatSpecularColorG = s.ActiveMaterial?.SpecularColor.Y,
+        MatSpecularColorB = s.ActiveMaterial?.SpecularColor.Z,
+        MatSpecularAnisotropy = s.ActiveMaterial?.SpecularAnisotropy,
+        MatCoatColorR = s.ActiveMaterial?.CoatColor.X,
+        MatCoatColorG = s.ActiveMaterial?.CoatColor.Y,
+        MatCoatColorB = s.ActiveMaterial?.CoatColor.Z,
+        MatCoatAnisotropy = s.ActiveMaterial?.CoatAnisotropy,
+        MatCoatDarkening = s.ActiveMaterial?.CoatDarkening,
+        MatFuzzWeight = s.ActiveMaterial?.FuzzWeight,
+        MatFuzzColorR = s.ActiveMaterial?.FuzzColor.X,
+        MatFuzzColorG = s.ActiveMaterial?.FuzzColor.Y,
+        MatFuzzColorB = s.ActiveMaterial?.FuzzColor.Z,
+        MatFuzzRoughness = s.ActiveMaterial?.FuzzRoughness,
+        MatThinFilmWeight = s.ActiveMaterial?.ThinFilmWeight,
+        MatThinFilmThickness = s.ActiveMaterial?.ThinFilmThickness,
+        MatThinFilmIor = s.ActiveMaterial?.ThinFilmIor,
+        MatGeometryOpacity = s.ActiveMaterial?.GeometryOpacity,
+        MatTextureScale = s.ActiveMaterial?.TextureScale,
+        MatBaseColorTexture = s.ActiveMaterial?.BaseColorTexture,
+        MatMetalnessTexture = s.ActiveMaterial?.MetalnessTexture,
+        MatRoughnessTexture = s.ActiveMaterial?.RoughnessTexture,
+        MatNormalTexture = s.ActiveMaterial?.NormalTexture,
+        MatEmissionTexture = s.ActiveMaterial?.EmissionTexture,
+        MatOpacityTexture = s.ActiveMaterial?.OpacityTexture,
         EnvIntensity = s.EnvIntensity,
     };
 
@@ -365,7 +420,34 @@ public static class SessionManager
             || data.MatEmissionLuminance.HasValue
             || data.MatCoatWeight.HasValue
             || data.MatCoatRoughness.HasValue
-            || data.MatCoatIor.HasValue;
+            || data.MatCoatIor.HasValue
+            || data.MatBaseWeight.HasValue
+            || data.MatSpecularWeight.HasValue
+            || data.MatSpecularColorR.HasValue
+            || data.MatSpecularColorG.HasValue
+            || data.MatSpecularColorB.HasValue
+            || data.MatSpecularAnisotropy.HasValue
+            || data.MatCoatColorR.HasValue
+            || data.MatCoatColorG.HasValue
+            || data.MatCoatColorB.HasValue
+            || data.MatCoatAnisotropy.HasValue
+            || data.MatCoatDarkening.HasValue
+            || data.MatFuzzWeight.HasValue
+            || data.MatFuzzColorR.HasValue
+            || data.MatFuzzColorG.HasValue
+            || data.MatFuzzColorB.HasValue
+            || data.MatFuzzRoughness.HasValue
+            || data.MatThinFilmWeight.HasValue
+            || data.MatThinFilmThickness.HasValue
+            || data.MatThinFilmIor.HasValue
+            || data.MatGeometryOpacity.HasValue
+            || data.MatTextureScale.HasValue
+            || data.MatBaseColorTexture is not null
+            || data.MatMetalnessTexture is not null
+            || data.MatRoughnessTexture is not null
+            || data.MatNormalTexture is not null
+            || data.MatEmissionTexture is not null
+            || data.MatOpacityTexture is not null;
 
         if (hasMaterial)
         {
@@ -388,6 +470,36 @@ public static class SessionManager
                 CoatWeight = data.MatCoatWeight ?? defaults.CoatWeight,
                 CoatRoughness = data.MatCoatRoughness ?? defaults.CoatRoughness,
                 CoatIor = data.MatCoatIor ?? defaults.CoatIor,
+                BaseWeight = data.MatBaseWeight ?? defaults.BaseWeight,
+                SpecularWeight = data.MatSpecularWeight ?? defaults.SpecularWeight,
+                SpecularColor = new Vector3(
+                    data.MatSpecularColorR ?? defaults.SpecularColor.X,
+                    data.MatSpecularColorG ?? defaults.SpecularColor.Y,
+                    data.MatSpecularColorB ?? defaults.SpecularColor.Z),
+                SpecularAnisotropy = data.MatSpecularAnisotropy ?? defaults.SpecularAnisotropy,
+                CoatColor = new Vector3(
+                    data.MatCoatColorR ?? defaults.CoatColor.X,
+                    data.MatCoatColorG ?? defaults.CoatColor.Y,
+                    data.MatCoatColorB ?? defaults.CoatColor.Z),
+                CoatAnisotropy = data.MatCoatAnisotropy ?? defaults.CoatAnisotropy,
+                CoatDarkening = data.MatCoatDarkening ?? defaults.CoatDarkening,
+                FuzzWeight = data.MatFuzzWeight ?? defaults.FuzzWeight,
+                FuzzColor = new Vector3(
+                    data.MatFuzzColorR ?? defaults.FuzzColor.X,
+                    data.MatFuzzColorG ?? defaults.FuzzColor.Y,
+                    data.MatFuzzColorB ?? defaults.FuzzColor.Z),
+                FuzzRoughness = data.MatFuzzRoughness ?? defaults.FuzzRoughness,
+                ThinFilmWeight = data.MatThinFilmWeight ?? defaults.ThinFilmWeight,
+                ThinFilmThickness = data.MatThinFilmThickness ?? defaults.ThinFilmThickness,
+                ThinFilmIor = data.MatThinFilmIor ?? defaults.ThinFilmIor,
+                GeometryOpacity = data.MatGeometryOpacity ?? defaults.GeometryOpacity,
+                TextureScale = data.MatTextureScale ?? defaults.TextureScale,
+                BaseColorTexture = data.MatBaseColorTexture,
+                MetalnessTexture = data.MatMetalnessTexture,
+                RoughnessTexture = data.MatRoughnessTexture,
+                NormalTexture = data.MatNormalTexture,
+                EmissionTexture = data.MatEmissionTexture,
+                OpacityTexture = data.MatOpacityTexture,
             };
             target.MaterialFilePath = data.MaterialFilePath;
         }

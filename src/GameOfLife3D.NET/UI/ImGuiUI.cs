@@ -1883,15 +1883,44 @@ public sealed class ImGuiUI
             ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextMuted);
             UIHelpers.LabelValue("Base Metalness:", $"{mat.BaseMetalness:F3}");
             UIHelpers.LabelValue("Base Diffuse Roughness:", $"{mat.BaseDiffuseRoughness:F3}");
+            UIHelpers.LabelValue("Base Weight:", $"{mat.BaseWeight:F3}");
+            UIHelpers.LabelValue("Specular Weight:", $"{mat.SpecularWeight:F3}");
+            UIHelpers.LabelValue("Specular Color:", $"({mat.SpecularColor.X:F2}, {mat.SpecularColor.Y:F2}, {mat.SpecularColor.Z:F2})");
             UIHelpers.LabelValue("Specular Roughness:", $"{mat.SpecularRoughness:F3}");
+            UIHelpers.LabelValue("Specular Anisotropy:", $"{mat.SpecularAnisotropy:F3}");
             UIHelpers.LabelValue("Specular IOR:", $"{mat.SpecularIor:F3}");
             UIHelpers.LabelValue("Emission Luminance:", $"{mat.EmissionLuminance:F3}");
             UIHelpers.LabelValue("Coat Weight:", $"{mat.CoatWeight:F3}");
             if (mat.CoatWeight > 0f)
             {
+                UIHelpers.LabelValue("Coat Color:", $"({mat.CoatColor.X:F2}, {mat.CoatColor.Y:F2}, {mat.CoatColor.Z:F2})");
                 UIHelpers.LabelValue("Coat Roughness:", $"{mat.CoatRoughness:F3}");
+                UIHelpers.LabelValue("Coat Anisotropy:", $"{mat.CoatAnisotropy:F3}");
                 UIHelpers.LabelValue("Coat IOR:", $"{mat.CoatIor:F3}");
+                UIHelpers.LabelValue("Coat Darkening:", $"{mat.CoatDarkening:F3}");
             }
+            UIHelpers.LabelValue("Fuzz Weight:", $"{mat.FuzzWeight:F3}");
+            if (mat.FuzzWeight > 0f)
+            {
+                UIHelpers.LabelValue("Fuzz Color:", $"({mat.FuzzColor.X:F2}, {mat.FuzzColor.Y:F2}, {mat.FuzzColor.Z:F2})");
+                UIHelpers.LabelValue("Fuzz Roughness:", $"{mat.FuzzRoughness:F3}");
+            }
+            UIHelpers.LabelValue("Thin Film Weight:", $"{mat.ThinFilmWeight:F3}");
+            if (mat.ThinFilmWeight > 0f)
+            {
+                UIHelpers.LabelValue("Thin Film Thickness:", $"{mat.ThinFilmThickness:F1} nm");
+                UIHelpers.LabelValue("Thin Film IOR:", $"{mat.ThinFilmIor:F3}");
+            }
+            UIHelpers.LabelValue("Geometry Opacity:", $"{mat.GeometryOpacity:F3}");
+            UIHelpers.LabelValue("Texture Scale:", $"{mat.TextureScale:F3}");
+
+            // Texture slots — file name when bound, em dash for constant-only.
+            UIHelpers.LabelValue("Base Color Texture:", mat.BaseColorTexture != null ? Path.GetFileName(mat.BaseColorTexture) : "—");
+            UIHelpers.LabelValue("Metalness Texture:", mat.MetalnessTexture != null ? Path.GetFileName(mat.MetalnessTexture) : "—");
+            UIHelpers.LabelValue("Roughness Texture:", mat.RoughnessTexture != null ? Path.GetFileName(mat.RoughnessTexture) : "—");
+            UIHelpers.LabelValue("Normal Texture:", mat.NormalTexture != null ? Path.GetFileName(mat.NormalTexture) : "—");
+            UIHelpers.LabelValue("Emission Texture:", mat.EmissionTexture != null ? Path.GetFileName(mat.EmissionTexture) : "—");
+            UIHelpers.LabelValue("Opacity Texture:", mat.OpacityTexture != null ? Path.GetFileName(mat.OpacityTexture) : "—");
             ImGui.PopStyleColor();
         }
 
@@ -1921,7 +1950,7 @@ public sealed class ImGuiUI
         if (result.UnsupportedTexturedParams.Count > 0)
         {
             string skipped = string.Join(", ", result.UnsupportedTexturedParams);
-            _materialImportError = $"Note: texture-connected inputs were ignored: {skipped}";
+            _materialImportError = $"Note: unsupported or missing texture inputs (constants used): {skipped}";
         }
     }
 

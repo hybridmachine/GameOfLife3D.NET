@@ -22,6 +22,7 @@ public sealed class Renderer3D : IDisposable
     private PostProcessPipeline? _postProcess;
     private BloomEffect? _bloom;
     private ShapeThumbnailRenderer? _shapeThumbnails;
+    private MaterialTextureCache? _textureCache;
 
     private readonly RenderSettings _settings = new();
     private int _gridSize = 50;
@@ -99,6 +100,8 @@ public sealed class Renderer3D : IDisposable
         _gridRenderer.UpdateGrid(_gridSize);
 
         _floorRenderer = new ReflectiveFloorRenderer(_gl);
+
+        _textureCache = new MaterialTextureCache(_gl);
     }
 
     public void InitializePostProcess(int width, int height)
@@ -176,16 +179,63 @@ public sealed class Renderer3D : IDisposable
         _pbrShader.SetUniform("uBaseColor", mat.BaseColor);
         _pbrShader.SetUniform("uBaseMetalness", mat.BaseMetalness);
         _pbrShader.SetUniform("uBaseDiffuseRoughness", mat.BaseDiffuseRoughness);
+        _pbrShader.SetUniform("uBaseWeight", mat.BaseWeight);
+        _pbrShader.SetUniform("uSpecularWeight", mat.SpecularWeight);
+        _pbrShader.SetUniform("uSpecularColor", mat.SpecularColor);
         _pbrShader.SetUniform("uSpecularRoughness", Math.Max(mat.SpecularRoughness, MinRoughness));
+        _pbrShader.SetUniform("uSpecularAnisotropy", mat.SpecularAnisotropy);
         _pbrShader.SetUniform("uSpecularIor", mat.SpecularIor);
         _pbrShader.SetUniform("uEmissionColor", mat.EmissionColor);
         _pbrShader.SetUniform("uEmissionLuminance", mat.EmissionLuminance);
         _pbrShader.SetUniform("uCoatWeight", mat.CoatWeight);
+        _pbrShader.SetUniform("uCoatColor", mat.CoatColor);
         _pbrShader.SetUniform("uCoatRoughness", Math.Max(mat.CoatRoughness, MinRoughness));
+        _pbrShader.SetUniform("uCoatAnisotropy", mat.CoatAnisotropy);
         _pbrShader.SetUniform("uCoatIor", mat.CoatIor);
+        _pbrShader.SetUniform("uCoatDarkening", mat.CoatDarkening);
+        _pbrShader.SetUniform("uFuzzWeight", mat.FuzzWeight);
+        _pbrShader.SetUniform("uFuzzColor", mat.FuzzColor);
+        _pbrShader.SetUniform("uFuzzRoughness", mat.FuzzRoughness);
+        _pbrShader.SetUniform("uThinFilmWeight", mat.ThinFilmWeight);
+        _pbrShader.SetUniform("uThinFilmThickness", mat.ThinFilmThickness);
+        _pbrShader.SetUniform("uThinFilmIor", mat.ThinFilmIor);
+        _pbrShader.SetUniform("uGeometryOpacity", mat.GeometryOpacity);
+        _pbrShader.SetUniform("uTextureScale", mat.TextureScale);
         _pbrShader.SetUniform("uEnvIntensity", _settings.EnvIntensity);
 
+        // Material textures live on fixed units 4–9 (units 0–1 are used by the
+        // background/composite passes). A missing or undecodable file leaves
+        // the slot unbound and its has-flag clear, so the shader falls back to
+        // the material constant.
+        BindMaterialTexture(mat.BaseColorTexture, TextureUnit.Texture4, "uTexBaseColor", "uHasTexBaseColor");
+        BindMaterialTexture(mat.MetalnessTexture, TextureUnit.Texture5, "uTexMetalness", "uHasTexMetalness");
+        BindMaterialTexture(mat.RoughnessTexture, TextureUnit.Texture6, "uTexRoughness", "uHasTexRoughness");
+        BindMaterialTexture(mat.NormalTexture, TextureUnit.Texture7, "uTexNormal", "uHasTexNormal");
+        BindMaterialTexture(mat.EmissionTexture, TextureUnit.Texture8, "uTexEmission", "uHasTexEmission");
+        BindMaterialTexture(mat.OpacityTexture, TextureUnit.Texture9, "uTexOpacity", "uHasTexOpacity");
+        _gl.ActiveTexture(TextureUnit.Texture0);
+
         UploadDefaultIblSH();
+    }
+
+    /// <summary>
+    /// Binds one material texture slot for the PBR shader: loads (or fetches
+    /// from the cache) the texture, binds it to its fixed unit, and sets the
+    /// sampler index and has-flag uniforms. A null path or a failed load
+    /// clears the flag so the shader uses the constant value instead.
+    /// </summary>
+    private void BindMaterialTexture(string? path, TextureUnit unit, string samplerUniform, string hasUniform)
+    {
+        if (_pbrShader == null) return;
+
+        uint texture = path != null && _textureCache != null ? _textureCache.GetOrLoad(path) : 0;
+        _pbrShader.SetUniform(samplerUniform, (int)(unit - TextureUnit.Texture0));
+        _pbrShader.SetUniform(hasUniform, texture != 0);
+        if (texture != 0)
+        {
+            _gl.ActiveTexture(unit);
+            _gl.BindTexture(TextureTarget.Texture2D, texture);
+        }
     }
 
     public void InvalidateState()
@@ -704,6 +754,7 @@ public sealed class Renderer3D : IDisposable
         _instancedRenderer?.Dispose();
         _gridRenderer?.Dispose();
         _floorRenderer?.Dispose();
+        _textureCache?.Dispose();
         _cubeShader?.Dispose();
         _pbrShader?.Dispose();
         _wireframeShader?.Dispose();
