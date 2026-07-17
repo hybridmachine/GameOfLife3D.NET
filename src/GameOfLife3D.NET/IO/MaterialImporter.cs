@@ -227,14 +227,19 @@ public static class MaterialImporter
         var notes = new List<string>();
 
         // Relative texture paths resolve against the JSON file's directory.
-        // A missing file is kept on the material (so it loads if it reappears)
-        // but noted so the UI can tell the user the constant is in effect.
+        // A missing file is treated as "not texture-connected" (returning the
+        // path anyway would trip the constant-promotion rule, and the shader
+        // would fall back to a promoted constant instead of the intended
+        // default), but noted so the UI can tell the user.
         string? ResolveTexture(string? p, string inputName)
         {
             if (p == null) return null;
             string full = Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(baseDir, p));
             if (!File.Exists(full))
+            {
                 notes.Add($"{inputName} (image file not found: {p})");
+                return null;
+            }
             return full;
         }
 
@@ -433,7 +438,13 @@ public static class MaterialImporter
 
             string full = Path.GetFullPath(Path.IsPathRooted(file) ? file : Path.Combine(baseDir, file));
             if (!File.Exists(full))
+            {
+                // Return null (treated as "not texture-connected") so the
+                // constant-promotion rule can't fire and the input keeps its
+                // intended default constant.
                 unsupported.Add($"{inputName} (image file not found: {file})");
+                return null;
+            }
             return full;
         }
 
