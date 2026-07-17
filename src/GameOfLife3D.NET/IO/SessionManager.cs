@@ -147,6 +147,11 @@ public sealed class RenderSessionData
     public string? MatNormalTexture { get; set; }
     public string? MatEmissionTexture { get; set; }
     public string? MatOpacityTexture { get; set; }
+    // Nullable provenance flags distinguish fields absent from legacy sessions
+    // from explicit false values written for author-supplied constants.
+    public bool? MatBaseMetalnessPromotedForTexture { get; set; }
+    public bool? MatSpecularRoughnessPromotedForTexture { get; set; }
+    public bool? MatEmissionColorPromotedForTexture { get; set; }
     public float? EnvIntensity { get; set; }
 }
 
@@ -294,6 +299,12 @@ public static class SessionManager
         MatNormalTexture = s.ActiveMaterial?.NormalTexture,
         MatEmissionTexture = s.ActiveMaterial?.EmissionTexture,
         MatOpacityTexture = s.ActiveMaterial?.OpacityTexture,
+        MatBaseMetalnessPromotedForTexture =
+            s.ActiveMaterial?.BaseMetalnessPromotedForTexture,
+        MatSpecularRoughnessPromotedForTexture =
+            s.ActiveMaterial?.SpecularRoughnessPromotedForTexture,
+        MatEmissionColorPromotedForTexture =
+            s.ActiveMaterial?.EmissionColorPromotedForTexture,
         EnvIntensity = s.EnvIntensity,
     };
 
@@ -452,6 +463,18 @@ public static class SessionManager
         if (hasMaterial)
         {
             var defaults = CellMaterial.Default;
+            // Sessions written before provenance was persisted retain the old
+            // identity-value inference. New saves write false explicitly for
+            // author-supplied identity constants, avoiding that ambiguity.
+            bool metalnessPromoted = data.MatBaseMetalnessPromotedForTexture
+                ?? (data.MatMetalnessTexture is not null && data.MatBaseMetalness == 1f);
+            bool roughnessPromoted = data.MatSpecularRoughnessPromotedForTexture
+                ?? (data.MatRoughnessTexture is not null && data.MatSpecularRoughness == 1f);
+            bool emissionPromoted = data.MatEmissionColorPromotedForTexture
+                ?? (data.MatEmissionTexture is not null
+                    && data.MatEmissionColorR == 1f
+                    && data.MatEmissionColorG == 1f
+                    && data.MatEmissionColorB == 1f);
             target.ActiveMaterial = new CellMaterial
             {
                 BaseColor = new Vector3(
@@ -496,9 +519,12 @@ public static class SessionManager
                 TextureScale = data.MatTextureScale ?? defaults.TextureScale,
                 BaseColorTexture = data.MatBaseColorTexture,
                 MetalnessTexture = data.MatMetalnessTexture,
+                BaseMetalnessPromotedForTexture = metalnessPromoted,
                 RoughnessTexture = data.MatRoughnessTexture,
+                SpecularRoughnessPromotedForTexture = roughnessPromoted,
                 NormalTexture = data.MatNormalTexture,
                 EmissionTexture = data.MatEmissionTexture,
+                EmissionColorPromotedForTexture = emissionPromoted,
                 OpacityTexture = data.MatOpacityTexture,
             };
             target.ActiveMaterial = DropMissingMaterialTextures(target.ActiveMaterial);
@@ -516,12 +542,11 @@ public static class SessionManager
     /// <summary>
     /// Drops material texture slots whose image file no longer exists (the
     /// session outlived its textures), logging each drop to stderr. When a
-    /// dropped slot's constant still holds the value the importer's
-    /// constant-promotion rule would have produced (metalness/roughness 1,
-    /// emission white), the constant is reset to the material default — the
-    /// same fallback the importer applies at import time — so a missing
-    /// texture can't silently turn the surface fully metallic, mirror-smooth,
-    /// or emissive.
+    /// dropped slot's constant was promoted by the importer, the constant is
+    /// reset to the material default — the same fallback the importer applies
+    /// at import time — so a missing texture can't silently turn the surface
+    /// fully metallic, mirror-smooth, or emissive. Explicit author constants
+    /// are retained.
     /// </summary>
     private static CellMaterial DropMissingMaterialTextures(CellMaterial mat)
     {
@@ -546,15 +571,21 @@ public static class SessionManager
         {
             BaseColorTexture = baseColorTex,
             MetalnessTexture = metalnessTex,
-            BaseMetalness = metalnessDropped && mat.BaseMetalness == 1f
+            BaseMetalness = metalnessDropped && mat.BaseMetalnessPromotedForTexture
                 ? defaults.BaseMetalness : mat.BaseMetalness,
+            BaseMetalnessPromotedForTexture =
+                !metalnessDropped && mat.BaseMetalnessPromotedForTexture,
             RoughnessTexture = roughnessTex,
-            SpecularRoughness = roughnessDropped && mat.SpecularRoughness == 1f
+            SpecularRoughness = roughnessDropped && mat.SpecularRoughnessPromotedForTexture
                 ? defaults.SpecularRoughness : mat.SpecularRoughness,
+            SpecularRoughnessPromotedForTexture =
+                !roughnessDropped && mat.SpecularRoughnessPromotedForTexture,
             NormalTexture = normalTex,
             EmissionTexture = emissionTex,
-            EmissionColor = emissionDropped && mat.EmissionColor == Vector3.One
+            EmissionColor = emissionDropped && mat.EmissionColorPromotedForTexture
                 ? defaults.EmissionColor : mat.EmissionColor,
+            EmissionColorPromotedForTexture =
+                !emissionDropped && mat.EmissionColorPromotedForTexture,
             OpacityTexture = opacityTex,
         };
     }

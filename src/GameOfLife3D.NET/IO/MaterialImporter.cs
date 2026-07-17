@@ -34,11 +34,12 @@ public sealed class MaterialImportResult
 /// For <c>.mtlx</c> files the importer searches for the first
 /// <c>&lt;open_pbr_surface&gt;</c> or <c>&lt;standard_surface&gt;</c> node and
 /// reads the scalar/color inputs whose names match the supported parameter set.
-/// Inputs connected to an <c>&lt;image&gt;</c>/<c>&lt;bitmap&gt;</c> node
-/// (optionally through one <c>&lt;normalmap&gt;</c> hop for the normal input)
-/// resolve to absolute texture paths; inputs connected to any other node graph
-/// are recorded in <see cref="MaterialImportResult.UnsupportedTexturedParams"/>
-/// and fall back to their constant defaults.
+/// Inputs connected directly or through a nodegraph output to an
+/// <c>&lt;image&gt;</c>/<c>&lt;bitmap&gt;</c> node (optionally through one
+/// <c>&lt;normalmap&gt;</c> hop for the normal input) resolve to absolute texture
+/// paths; inputs connected to any other node graph are recorded in
+/// <see cref="MaterialImportResult.UnsupportedTexturedParams"/> and fall back to
+/// their constant defaults.
 /// </para>
 ///
 /// <para>
@@ -152,12 +153,13 @@ public static class MaterialImporter
             def.CoatWeight, ctx);
         var coatColor = ReadColor3(inputs, "coat_color", def.CoatColor, ctx);
         var coatRoughness = ReadFloat(inputs, "coat_roughness", def.CoatRoughness, ctx);
-        var coatAnisotropy = ReadFloat(inputs, "coat_roughness_anisotropy",
+        var coatAnisotropy = ReadFloat(inputs,
+            isOpenPbr ? "coat_roughness_anisotropy" : "coat_anisotropy",
             def.CoatAnisotropy, ctx);
         var coatIor = ReadFloat(inputs, isOpenPbr ? "coat_ior" : "coat_IOR",
             def.CoatIor, ctx);
         var coatDarkening = ReadFloat(inputs, "coat_darkening", def.CoatDarkening, ctx);
-        var fuzzWeight = ReadFloat(inputs, isOpenPbr ? "fuzz_weight" : "sheen_weight",
+        var fuzzWeight = ReadFloat(inputs, isOpenPbr ? "fuzz_weight" : "sheen",
             def.FuzzWeight, ctx);
         var fuzzColor = ReadColor3(inputs, isOpenPbr ? "fuzz_color" : "sheen_color",
             def.FuzzColor, ctx);
@@ -177,16 +179,19 @@ public static class MaterialImporter
             BaseColorTexture = baseColor.Texture,
             BaseMetalness = metalness.Value,
             MetalnessTexture = metalness.Texture,
+            BaseMetalnessPromotedForTexture = metalness.WasPromoted,
             BaseDiffuseRoughness = diffuseRoughness.Value,
             BaseWeight = baseWeight.Value,
             SpecularWeight = specularWeight.Value,
             SpecularColor = specularColor.Value,
             SpecularRoughness = specularRoughness.Value,
             RoughnessTexture = specularRoughness.Texture,
+            SpecularRoughnessPromotedForTexture = specularRoughness.WasPromoted,
             SpecularAnisotropy = specularAnisotropy.Value,
             SpecularIor = specularIor.Value,
             EmissionColor = emissionColor.Value,
             EmissionTexture = emissionColor.Texture,
+            EmissionColorPromotedForTexture = emissionColor.WasPromoted,
             EmissionLuminance = emissionLuminance.Value,
             CoatWeight = coatWeight.Value,
             CoatColor = coatColor.Value,
@@ -260,16 +265,20 @@ public static class MaterialImporter
             // author supplied an explicit constant.
             BaseMetalness = dto.BaseMetalness ?? (metalnessTex != null ? 1f : def.BaseMetalness),
             MetalnessTexture = metalnessTex,
+            BaseMetalnessPromotedForTexture = dto.BaseMetalness is null && metalnessTex is not null,
             BaseDiffuseRoughness = dto.BaseDiffuseRoughness ?? def.BaseDiffuseRoughness,
             BaseWeight = dto.BaseWeight ?? def.BaseWeight,
             SpecularWeight = dto.SpecularWeight ?? def.SpecularWeight,
             SpecularColor = Color3OrDefault(dto.SpecularColor, def.SpecularColor),
             SpecularRoughness = dto.SpecularRoughness ?? (roughnessTex != null ? 1f : def.SpecularRoughness),
             RoughnessTexture = roughnessTex,
+            SpecularRoughnessPromotedForTexture =
+                dto.SpecularRoughness is null && roughnessTex is not null,
             SpecularAnisotropy = dto.SpecularAnisotropy ?? def.SpecularAnisotropy,
             SpecularIor = dto.SpecularIor ?? def.SpecularIor,
             EmissionColor = Color3OrDefault(dto.EmissionColor, emissionTex != null ? Vector3.One : def.EmissionColor),
             EmissionTexture = emissionTex,
+            EmissionColorPromotedForTexture = !HasColor3(dto.EmissionColor) && emissionTex is not null,
             EmissionLuminance = dto.EmissionLuminance ?? def.EmissionLuminance,
             CoatWeight = dto.CoatWeight ?? def.CoatWeight,
             CoatColor = Color3OrDefault(dto.CoatColor, def.CoatColor),
@@ -295,24 +304,27 @@ public static class MaterialImporter
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>Result of reading one scalar input: constant plus optional texture path.</summary>
-    private readonly struct ScalarRead(float value, string? texture)
+    private readonly struct ScalarRead(float value, string? texture, bool wasPromoted = false)
     {
         public float Value { get; } = value;
         public string? Texture { get; } = texture;
+        public bool WasPromoted { get; } = wasPromoted;
 
         /// <summary>
         /// Constant-promotion rule: a texture-connected scalar whose default is
         /// not the multiplicative identity (metalness 0, roughness 0.3) is
         /// promoted to 1 so the texture reads through unchanged.
         /// </summary>
-        public ScalarRead PromotedOnTexture() => Texture != null ? new(1f, Texture) : this;
+        public ScalarRead PromotedOnTexture() =>
+            Texture != null ? new ScalarRead(1f, Texture, wasPromoted: true) : this;
     }
 
     /// <summary>Result of reading one color input: constant plus optional texture path.</summary>
-    private readonly struct ColorRead(Vector3 value, string? texture)
+    private readonly struct ColorRead(Vector3 value, string? texture, bool wasPromoted = false)
     {
         public Vector3 Value { get; } = value;
         public string? Texture { get; } = texture;
+        public bool WasPromoted { get; } = wasPromoted;
 
         /// <summary>
         /// Constant-promotion rule for colors: a texture-connected color whose
@@ -320,7 +332,8 @@ public static class MaterialImporter
         /// to black) is promoted to white so the texture reads through
         /// unchanged. A no-op for base_color, whose default is already white.
         /// </summary>
-        public ColorRead PromotedOnTexture() => Texture != null ? new(Vector3.One, Texture) : this;
+        public ColorRead PromotedOnTexture() =>
+            Texture != null ? new ColorRead(Vector3.One, Texture, wasPromoted: true) : this;
     }
 
     private static ScalarRead ReadFloat(
@@ -329,8 +342,7 @@ public static class MaterialImporter
     {
         if (!inputs.TryGetValue(name, out var el)) return new ScalarRead(fallback, null);
 
-        // If the input has a nodename attribute it's connected to a node graph.
-        if (el.Attribute("nodename") != null)
+        if (HasNodeConnection(el))
             return new ScalarRead(fallback, ctx.ResolveImageTexture(el, name, allowNormalMapHop: false));
 
         string? val = el.Attribute("value")?.Value;
@@ -347,7 +359,7 @@ public static class MaterialImporter
     {
         if (!inputs.TryGetValue(name, out var el)) return new ColorRead(fallback, null);
 
-        if (el.Attribute("nodename") != null)
+        if (HasNodeConnection(el))
             return new ColorRead(fallback, ctx.ResolveImageTexture(el, name, allowNormalMapHop: false));
 
         string? val = el.Attribute("value")?.Value;
@@ -374,28 +386,31 @@ public static class MaterialImporter
         MtlxImportContext ctx, bool allowNormalMapHop)
     {
         if (!inputs.TryGetValue(name, out var el)) return null;
-        if (el.Attribute("nodename") == null) return null;
+        if (!HasNodeConnection(el)) return null;
         return ctx.ResolveImageTexture(el, name, allowNormalMapHop);
     }
+
+    private static bool HasNodeConnection(XElement input) =>
+        input.Attribute("nodename") != null || input.Attribute("nodegraph") != null;
+
+    private static bool HasColor3(float[]? arr) => arr?.Length == 3;
 
     private static Vector3 Color3OrDefault(float[]? arr, Vector3 fallback) =>
         arr?.Length == 3 ? new Vector3(arr[0], arr[1], arr[2]) : fallback;
 
     /// <summary>
     /// Resolution context for one .mtlx import: locates nodes referenced by
-    /// <c>nodename</c>, turns <c>&lt;image&gt;</c>/<c>&lt;bitmap&gt;</c> file
-    /// references into absolute paths (following a single
-    /// <c>&lt;normalmap&gt;</c> hop where allowed), and records inputs wired
-    /// to anything else as unsupported node graphs.
+    /// <c>nodename</c> or a <c>nodegraph</c>/<c>output</c> pair, turns
+    /// <c>&lt;image&gt;</c>/<c>&lt;bitmap&gt;</c> file references into absolute
+    /// paths (following a single <c>&lt;normalmap&gt;</c> hop where allowed), and
+    /// records inputs wired to anything else as unsupported node graphs.
     /// </summary>
     private sealed class MtlxImportContext(XElement root, string baseDir, List<string> unsupported)
     {
         public string? ResolveImageTexture(XElement input, string inputName, bool allowNormalMapHop)
         {
-            string? nodeName = input.Attribute("nodename")?.Value;
-            if (nodeName == null) return null;
-
-            XElement? node = FindNode(nodeName);
+            XElement scope = FindConnectionScope(input);
+            XElement? node = ResolveConnectedNode(input, scope, out scope);
             if (node == null)
             {
                 unsupported.Add($"{inputName} (unsupported node graph)");
@@ -405,11 +420,13 @@ public static class MaterialImporter
             // Pass through one <normalmap> hop: <normalmap> → its "in" input → image.
             if (allowNormalMapHop && IsElement(node, "normalmap"))
             {
-                string? innerName = node.Elements()
+                XElement? innerInput = node.Elements()
                     .FirstOrDefault(e => IsElement(e, "input")
-                        && string.Equals(e.Attribute("name")?.Value, "in", StringComparison.OrdinalIgnoreCase))
-                    ?.Attribute("nodename")?.Value;
-                node = innerName != null ? FindNode(innerName) : null;
+                        && string.Equals(e.Attribute("name")?.Value, "in",
+                            StringComparison.OrdinalIgnoreCase));
+                node = innerInput != null
+                    ? ResolveConnectedNode(innerInput, scope, out scope)
+                    : null;
                 if (node == null)
                 {
                     unsupported.Add($"{inputName} (unsupported node graph)");
@@ -448,13 +465,64 @@ public static class MaterialImporter
             return full;
         }
 
+        private XElement? ResolveConnectedNode(
+            XElement connection, XElement defaultScope, out XElement resolvedScope,
+            int graphDepth = 0)
+        {
+            if (graphDepth > 16)
+            {
+                resolvedScope = defaultScope;
+                return null;
+            }
+
+            string? nodeName = connection.Attribute("nodename")?.Value;
+            if (nodeName != null)
+            {
+                resolvedScope = defaultScope;
+                return FindNode(defaultScope, nodeName);
+            }
+
+            string? graphName = connection.Attribute("nodegraph")?.Value;
+            XElement? graph = graphName != null ? FindNodeGraph(graphName) : null;
+            if (graph == null)
+            {
+                resolvedScope = defaultScope;
+                return null;
+            }
+
+            string? outputName = connection.Attribute("output")?.Value;
+            XElement[] outputs = graph.Elements()
+                .Where(e => IsElement(e, "output"))
+                .ToArray();
+            XElement? output = outputName != null
+                ? outputs.FirstOrDefault(e => e.Attribute("name")?.Value == outputName)
+                : outputs.Length == 1
+                    ? outputs[0]
+                    : outputs.FirstOrDefault(e => e.Attribute("name")?.Value == "out");
+
+            if (output == null)
+            {
+                resolvedScope = graph;
+                return null;
+            }
+
+            return ResolveConnectedNode(output, graph, out resolvedScope, graphDepth + 1);
+        }
+
+        private XElement FindConnectionScope(XElement connection) =>
+            connection.Ancestors().FirstOrDefault(e => IsElement(e, "nodegraph")) ?? root;
+
+        private XElement? FindNodeGraph(string name) =>
+            root.Descendants().FirstOrDefault(e =>
+                IsElement(e, "nodegraph") && e.Attribute("name")?.Value == name);
+
         /// <summary>
         /// Finds a node element by its <c>name</c> attribute anywhere in the
-        /// document. <c>&lt;input&gt;</c>/<c>&lt;output&gt;</c> elements also
+        /// supplied scope. <c>&lt;input&gt;</c>/<c>&lt;output&gt;</c> elements also
         /// carry names, so they are excluded from the search.
         /// </summary>
-        private XElement? FindNode(string name) =>
-            root.Descendants().FirstOrDefault(e =>
+        private static XElement? FindNode(XElement scope, string name) =>
+            scope.Descendants().FirstOrDefault(e =>
                 !IsElement(e, "input") && !IsElement(e, "output") &&
                 e.Attribute("name")?.Value == name);
 

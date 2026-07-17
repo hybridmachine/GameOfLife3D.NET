@@ -149,6 +149,26 @@ public sealed record CellMaterial
     /// <summary>Absolute path of the geometry_opacity texture, or null.</summary>
     public string? OpacityTexture { get; init; }
 
+    // ── Import provenance ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when the importer promoted base_metalness to 1 for a connected texture.
+    /// Used when a persisted texture later goes missing; it does not affect rendering.
+    /// </summary>
+    public bool BaseMetalnessPromotedForTexture { get; init; }
+
+    /// <summary>
+    /// True when the importer promoted specular_roughness to 1 for a connected texture.
+    /// Used when a persisted texture later goes missing; it does not affect rendering.
+    /// </summary>
+    public bool SpecularRoughnessPromotedForTexture { get; init; }
+
+    /// <summary>
+    /// True when the importer promoted emission_color to white for a connected texture.
+    /// Used when a persisted texture later goes missing; it does not affect rendering.
+    /// </summary>
+    public bool EmissionColorPromotedForTexture { get; init; }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>
